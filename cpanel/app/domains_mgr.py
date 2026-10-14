@@ -1,10 +1,20 @@
 import os
 import subprocess
 
-def get_virtual_hosts():
+def get_virtual_hosts(include_docker_domains=False):
     """
     Returns a list of dictionaries with virtual host information, grouped by domain.
     Checks both Nginx and Apache directories.
+
+    Args:
+        include_docker_domains: When True, domains marked with # DOCKER_APP are
+                                included in the result (useful for directory selects
+                                like FTP where container web roots are needed).
+                                Next.js app domains (# NEXTJS_APP) are always filtered
+                                out of such selects.
+                                When False (default), both # DOCKER_APP and # NEXTJS_APP
+                                domains are removed so they don't appear on the generic
+                                Domains management page.
     """
     grouped_vhosts = {}
 
@@ -50,20 +60,26 @@ def get_virtual_hosts():
         if os.path.exists(f'/etc/letsencrypt/live/{domain}/fullchain.pem'):
             grouped_vhosts[domain]['has_ssl'] = True
 
-    # Next.js App Filtering
-    # Remove any domains that contain the '# NEXTJS_APP' & # DOCKER_APP marker in any of their configs.
+    # Next.js / Docker App Filtering
+    # Always filter out Next.js app domains from any non-Domains-page context.
+    # Docker app domains are only shown when include_docker_domains=True (e.g. FTP
+    # directory select needs the container web root paths).
     domains_to_remove = []
     for domain, data in grouped_vhosts.items():
         for server, path in data['config_paths'].items():
             try:
                 with open(path, 'r') as f:
                     content = f.read()
-                    if '# NEXTJS_APP' in content or '# DOCKER_APP' in content:
+                    is_nextjs = '# NEXTJS_APP' in content
+                    is_docker = '# DOCKER_APP' in content
+                    # Remove if it's a Next.js app, OR if it's a Docker app but
+                    # the caller hasn't asked for Docker domains.
+                    if is_nextjs or (is_docker and not include_docker_domains):
                         domains_to_remove.append(domain)
                         break
             except Exception:
                 pass
-                
+
     for domain in domains_to_remove:
         del grouped_vhosts[domain]
 

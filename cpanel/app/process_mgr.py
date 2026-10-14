@@ -2,7 +2,6 @@ import subprocess
 import json
 import os
 import shutil
-import subprocess
 
 PM2_HOME = "/root/.pm2"
 
@@ -92,10 +91,23 @@ def manage_process(action, name_or_id):
 def start_nextjs_app(app_path, app_name, port):
     """
     Starts a Next.js application using PM2.
+    Prevents duplicate processes by checking if a process with the same name
+    is already registered in PM2 before attempting to start a new one.
     """
     if not os.path.exists(app_path):
         return False, f"Path does not exist: {app_path}"
-    
+
+    # --- Duplicate guard ---
+    # Check if a PM2 process with this name already exists to prevent spawning duplicates.
+    existing = list_processes()
+    for proc in existing:
+        if proc.get('name') == app_name:
+            return False, (
+                f"A process named '{app_name}' is already registered in PM2 "
+                f"(ID: {proc.get('pm_id')}, status: {proc.get('pm2_env', {}).get('status', 'unknown')}). "
+                "Use Restart or delete it first before starting a new instance."
+            )
+
     try:
         env = os.environ.copy()
         env["PM2_HOME"] = PM2_HOME
