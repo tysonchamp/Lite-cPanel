@@ -66,7 +66,8 @@ exe:/usr/sbin/rsyslogd
 exe:/usr/lib/systemd/systemd-timesyncd
 exe:/usr/lib/systemd/systemd-networkd
 exe:/usr/bin/htcacheclean
-exe:/usr/bin/python3.12
+exe:/usr/bin/python3
+exe:/usr/bin/python3.*
 user:www-data
 EOT
 

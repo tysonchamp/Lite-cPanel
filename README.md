@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python" />
-  <img src="https://img.shields.io/badge/Flask-2.x-lightgrey?logo=flask" />
+  <img src="https://img.shields.io/badge/Python-3.10%20--%203.13%2B-blue?logo=python" />
+  <img src="https://img.shields.io/badge/Flask-3.x-lightgrey?logo=flask" />
   <img src="https://img.shields.io/badge/Ubuntu-24.04%2B-orange?logo=ubuntu" />
   <img src="https://img.shields.io/badge/License-GPL--3.0-green" />
   <img src="https://img.shields.io/badge/Status-Active-brightgreen" />
@@ -191,7 +191,7 @@ It bundles a full automated LAMP/LEMP stack installer alongside a browser-based 
 | **Debian** | 12 (Bookworm) | ⚠️ Mostly Compatible |
 | Other Linux | Any | ❌ Not Tested |
 
-> **Note:** The automated stack installer (`install.sh`) is written specifically for Ubuntu/Debian `apt`-based systems. The panel itself (Flask app) will run on any Linux distribution with Python 3.10+.
+> **Note:** The automated stack installer (`install.sh`) is written specifically for Ubuntu/Debian `apt`-based systems. The panel itself (Flask app) will run on any Linux distribution with Python 3.10+ (tested on Python 3.10 through 3.13+).
 
 ---
 
