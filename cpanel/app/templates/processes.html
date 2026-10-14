@@ -218,8 +218,7 @@
                                 </td>
                                 <td class="align-middle">{{ p.monit.cpu }}%</td>
                                 <td class="align-middle">{{ (p.monit.memory / 1024 / 1024)|round(1) }} MB</td>
-                                <td class="align-middle text-muted small">{{ (p.pm2_env.pm_uptime / 1000 / 60 /
-                                    60)|round(1) }}h</td>
+                                <td class="align-middle text-muted small">{{ p.pm2_env.pm_uptime | format_uptime }}</td>
                                 <td class="align-middle text-end">
                                     <div class="d-flex justify-content-end gap-1">
                                         {% if p.pm2_env.status == 'online' %}

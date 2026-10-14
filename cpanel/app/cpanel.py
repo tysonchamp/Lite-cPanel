@@ -79,6 +79,28 @@ app.config['MAX_CONTENT_LENGTH'] = 1000 * 1024 * 1024  # 1GB limit
 from terminal_mgr import register_terminal_websocket
 register_terminal_websocket(sock)
 
+@app.template_filter('format_uptime')
+def format_uptime(pm_uptime_ms):
+    """Convert a PM2 pm_uptime Unix timestamp (milliseconds) to a human-readable
+    elapsed duration string, e.g. '2d 14h 30m' or '45m 12s'."""
+    import time
+    try:
+        elapsed = int(time.time() * 1000) - int(pm_uptime_ms)
+        if elapsed < 0:
+            return '0s'
+        seconds = elapsed // 1000
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        days, hours = divmod(hours, 24)
+        parts = []
+        if days:    parts.append(f"{days}d")
+        if hours:   parts.append(f"{hours}h")
+        if minutes: parts.append(f"{minutes}m")
+        if seconds or not parts: parts.append(f"{seconds}s")
+        return ' '.join(parts)
+    except Exception:
+        return 'N/A'
+
 # --- Auto-Updater ---
 import threading
 import time
