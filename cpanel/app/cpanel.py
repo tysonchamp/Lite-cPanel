@@ -1175,7 +1175,8 @@ from database_mgr import (get_databases, get_database_details, create_database,
                            delete_database, setup_phpmyadmin_signon,
                            change_user_password, update_user_host,
                            attach_user_to_db, set_user_permissions,
-                           detach_user_from_db, get_all_mysql_users)
+                           detach_user_from_db, get_all_mysql_users,
+                           delete_mysql_user, get_all_users_details)
 
 @app.route('/databases', methods=['GET', 'POST'])
 @login_required
@@ -1282,9 +1283,10 @@ def databases():
             flash(message, 'success' if success else 'danger')
 
         elif action == 'detach_user':
-            db_name = (request.form.get('db_name') or '').strip()
-            db_user = (request.form.get('db_user') or '').strip()
-            host    = (request.form.get('host') or '').strip()
+            db_name     = (request.form.get('db_name') or '').strip()
+            db_user     = (request.form.get('db_user') or '').strip()
+            host        = (request.form.get('host') or '').strip()
+            delete_user = (request.form.get('delete_user') == '1')
 
             v1, e1 = validate_input(db_name, 'db_name')
             v2, e2 = validate_input(db_user, 'username')
@@ -1296,15 +1298,32 @@ def databases():
                 flash("Invalid host specification.", "danger")
                 return redirect(url_for('databases'))
 
-            success, message = detach_user_from_db(db_name, db_user, host)
+            success, message = detach_user_from_db(db_name, db_user, host, delete_user=delete_user)
+            flash(message, 'success' if success else 'danger')
+
+        elif action == 'delete_user':
+            db_user = (request.form.get('db_user') or '').strip()
+            host    = (request.form.get('host') or '').strip()
+
+            v, e = validate_input(db_user, 'username')
+            if not v:
+                flash(f"Validation failed: {e}", "danger")
+                return redirect(url_for('databases'))
+
+            if not host or not re.match(r'^[a-zA-Z0-9_\.\-:%]+$', host):
+                flash("Invalid host specification.", "danger")
+                return redirect(url_for('databases'))
+
+            success, message = delete_mysql_user(db_user, host)
             flash(message, 'success' if success else 'danger')
 
         return redirect(url_for('databases'))
 
     db_details = get_database_details()
     existing_users = get_all_mysql_users()
+    all_users = get_all_users_details()
     all_dbs = [db['name'] for db in db_details]
-    return render_template('databases.html', db_details=db_details, existing_users=existing_users, all_dbs=all_dbs)
+    return render_template('databases.html', db_details=db_details, existing_users=existing_users, all_users=all_users, all_dbs=all_dbs)
 
 from mongodb_mgr import (check_mongodb_installed, install_mongodb, get_databases as get_mongo_dbs,
                          create_database as create_mongo_db, delete_database as delete_mongo_db,

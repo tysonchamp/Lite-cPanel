@@ -176,6 +176,99 @@
     </div>
 </div>
 
+<!-- Database Users List -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-users-cog text-primary me-2"></i>Database Users</h5>
+                <span class="text-muted small">All active MySQL user accounts &amp; database privileges</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>User</th>
+                                <th>Host Access</th>
+                                <th>Assigned Databases</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for u in all_users %}
+                            <tr>
+                                <td class="fw-semibold">
+                                    <i class="fas fa-user text-muted me-2"></i><span class="font-monospace">{{ u.User }}</span>
+                                </td>
+                                <td>
+                                    {% if u.Host == 'localhost' %}
+                                    <span class="badge bg-secondary"><i class="fas fa-house me-1"></i>localhost</span>
+                                    {% elif u.Host == '%' %}
+                                    <span class="badge bg-warning text-dark"><i class="fas fa-globe me-1"></i>Remote (%)</span>
+                                    {% else %}
+                                    <span class="badge bg-info text-dark"><i class="fas fa-network-wired me-1"></i>{{ u.Host }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if u.databases %}
+                                        <div class="d-flex flex-wrap gap-1">
+                                        {% for d in u.databases %}
+                                            <span class="badge bg-light text-dark border">
+                                                <i class="fas fa-database text-primary me-1"></i>{{ d.db_name }}
+                                                {% if d.permission == 'readonly' %}
+                                                <span class="badge bg-success ms-1">Read Only</span>
+                                                {% else %}
+                                                <span class="badge bg-primary ms-1">All</span>
+                                                {% endif %}
+                                            </span>
+                                        {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <span class="badge bg-secondary-subtle text-secondary border">
+                                            <i class="fas fa-unlink me-1"></i>Unassigned / Detached
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <!-- Change Password -->
+                                        <button class="btn btn-outline-secondary btn-sm" title="Change Password"
+                                                onclick="openChangePassword('{{ u.User }}', '{{ u.Host }}')">
+                                            <i class="fas fa-key"></i>
+                                        </button>
+                                        <!-- Host Management -->
+                                        <button class="btn btn-outline-secondary btn-sm" title="Manage Host Access"
+                                                onclick="openHostModal('', '{{ u.User }}', '{{ u.Host }}')">
+                                            <i class="fas fa-network-wired"></i>
+                                        </button>
+                                        <!-- Attach to DB -->
+                                        <button class="btn btn-outline-primary btn-sm" title="Attach to Database"
+                                                onclick="openAttachUserModal('', '{{ u.User }}', '{{ u.Host }}')">
+                                            <i class="fas fa-link me-1"></i>Attach
+                                        </button>
+                                        <!-- Delete User Completely -->
+                                        <button class="btn btn-outline-danger btn-sm" title="Delete User Permanently from MySQL"
+                                                onclick="openDeleteUserModal('{{ u.User }}', '{{ u.Host }}')">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center py-3 text-muted">No database users found.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
 <!-- Change Password Modal -->
 <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-labelledby="cpwLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -491,14 +584,57 @@
                         Are you sure you want to remove user <strong id="detach_user_display"></strong>@<code id="detach_host_display"></code>
                         from database <strong id="detach_db_display"></strong>?
                     </p>
-                    <div class="alert alert-warning py-2 mb-0 small">
-                        <i class="fas fa-exclamation-triangle me-1"></i>
-                        This user will lose all privileges on this database. If the user does not have access to any other database, their MySQL user account will also be removed.
+                    <div class="alert alert-info py-2 mb-2 small">
+                        <i class="fas fa-info-circle me-1"></i>
+                        The user will lose all privileges on <strong><span id="detach_db_info"></span></strong>.
+                    </div>
+                    <div class="form-check mt-3 pt-2 border-top">
+                        <input class="form-check-input" type="checkbox" name="delete_user" id="detach_delete_user" value="1">
+                        <label class="form-check-label text-danger fw-semibold" for="detach_delete_user">
+                            <i class="fas fa-trash-alt me-1"></i>Also permanently delete user account from MySQL
+                        </label>
+                        <div class="form-text text-muted small">
+                            If unchecked, the user remains in MySQL and can be attached to other databases or deleted anytime from the <strong>Database Users</strong> table below.
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-danger">Detach User</button>
+                    <button type="submit" class="btn btn-danger">Confirm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete User Modal -->
+<div class="modal fade" id="deleteUserModal" tabindex="-1" aria-labelledby="deleteUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('databases') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="delete_user">
+                <input type="hidden" name="db_user" id="deluser_name">
+                <input type="hidden" name="host" id="deluser_host">
+
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger" id="deleteUserModalLabel">
+                        <i class="fas fa-trash-alt me-2"></i>Delete MySQL User
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        Are you sure you want to permanently delete user <strong id="deluser_name_display"></strong>@<code id="deluser_host_display"></code> from MySQL?
+                    </p>
+                    <div class="alert alert-danger py-2 mb-0 small">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        This action is irreversible. The MySQL user account will be dropped and all its database permissions will be permanently removed.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Delete User</button>
                 </div>
             </form>
         </div>
@@ -556,14 +692,25 @@ function applyHostSelection() {
     return true;
 }
 
-function openAttachUserModal(dbName) {
+function openAttachUserModal(dbName, userName, userHost) {
     if (dbName) {
         document.getElementById('attach_db_name').value = dbName;
     }
-    document.getElementById('attach_db_user').value = '';
+    document.getElementById('attach_db_user').value = userName || '';
     document.getElementById('attach_db_pass').value = '';
-    document.getElementById('attach_host_local').checked = true;
-    toggleAttachIpField(false);
+
+    if (userHost === '%') {
+        document.getElementById('attach_host_any').checked = true;
+        toggleAttachIpField(false);
+    } else if (userHost && userHost !== 'localhost') {
+        document.getElementById('attach_host_ip').checked = true;
+        document.getElementById('attach_custom_ip').value = userHost;
+        toggleAttachIpField(true);
+    } else {
+        document.getElementById('attach_host_local').checked = true;
+        toggleAttachIpField(false);
+    }
+
     document.getElementById('perm_ro').checked = true;
     new bootstrap.Modal(document.getElementById('attachUserModal')).show();
 }
@@ -610,7 +757,17 @@ function openDetachModal(dbName, user, host) {
     document.getElementById('detach_user_display').textContent = user;
     document.getElementById('detach_host_display').textContent = host;
     document.getElementById('detach_db_display').textContent = dbName;
+    document.getElementById('detach_db_info').textContent = dbName;
+    document.getElementById('detach_delete_user').checked = false;
     new bootstrap.Modal(document.getElementById('detachUserModal')).show();
+}
+
+function openDeleteUserModal(user, host) {
+    document.getElementById('deluser_name').value = user;
+    document.getElementById('deluser_host').value = host;
+    document.getElementById('deluser_name_display').textContent = user;
+    document.getElementById('deluser_host_display').textContent = host;
+    new bootstrap.Modal(document.getElementById('deleteUserModal')).show();
 }
 
 function generatePassword(targetId) {

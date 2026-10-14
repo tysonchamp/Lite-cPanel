@@ -393,10 +393,10 @@ def set_user_permissions(db_name, db_user, host, permission='readonly'):
         if conn:
             conn.close()
 
-def detach_user_from_db(db_name, db_user, host):
+def detach_user_from_db(db_name, db_user, host, delete_user=False):
     """
     Detaches a user from a database by revoking all privileges on it.
-    If the user has no privileges on any other database, drops the user from MySQL.
+    If delete_user is True, also permanently deletes the user account from MySQL.
     """
     conn = get_mysql_connection()
     if not conn: return False, "Could not connect to database server."
@@ -407,14 +407,6 @@ def detach_user_from_db(db_name, db_user, host):
             user_esc = db_user.replace("'", "''")
             host_esc = host.replace("'", "''")
 
-            # Check if this user has grants on ANY other database
-            cursor.execute(
-                "SELECT COUNT(*) as cnt FROM mysql.db WHERE User = %s AND Host = %s AND Db != %s",
-                (db_user, host, db_name)
-            )
-            row = cursor.fetchone()
-            other_db_count = row['cnt'] if row else 0
-
             # Revoke privileges on this DB
             try:
                 cursor.execute(f"REVOKE ALL PRIVILEGES ON `{db_name_esc}`.* FROM '{user_esc}'@'{host_esc}'")
@@ -422,15 +414,91 @@ def detach_user_from_db(db_name, db_user, host):
                 pass
 
             msg = f"User '{db_user}'@'{host}' detached from '{db_name}'."
-            if other_db_count == 0:
+            if delete_user:
                 cursor.execute(f"DROP USER IF EXISTS '{user_esc}'@'{host_esc}'")
-                msg += f" (Exclusive user '{db_user}'@'{host}' deleted from MySQL)"
+                msg += f" (User '{db_user}'@'{host}' permanently deleted from MySQL)."
 
             cursor.execute("FLUSH PRIVILEGES")
         conn.commit()
         return True, msg
     except pymysql.MySQLError as e:
         return False, f"Database error: {str(e)}"
+    finally:
+        if conn:
+            conn.close()
+
+def delete_mysql_user(db_user, host):
+    """
+    Permanently deletes a MySQL user account and all their database privileges.
+    """
+    conn = get_mysql_connection()
+    if not conn: return False, "Could not connect to database server."
+
+    try:
+        with conn.cursor() as cursor:
+            user_esc = db_user.replace("'", "''")
+            host_esc = host.replace("'", "''")
+
+            cursor.execute(f"DROP USER IF EXISTS '{user_esc}'@'{host_esc}'")
+            cursor.execute("FLUSH PRIVILEGES")
+        conn.commit()
+        return True, f"User '{db_user}'@'{host}' permanently deleted from MySQL."
+    except pymysql.MySQLError as e:
+        return False, f"Database error: {str(e)}"
+    finally:
+        if conn:
+            conn.close()
+
+def get_all_users_details():
+    """
+    Returns a list of all non-system MySQL users, their host, and the list of
+    databases they currently have privileges on.
+    """
+    conn = get_mysql_connection()
+    if not conn: return []
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT User, Host FROM mysql.user WHERE User NOT IN "
+                "('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema', 'debian-sys-maint') "
+                "ORDER BY User, Host"
+            )
+            raw_users = cursor.fetchall()
+            
+            users = []
+            for u in raw_users:
+                cursor.execute(
+                    "SELECT Db, Select_priv, Insert_priv, Update_priv, Delete_priv, "
+                    "Create_priv, Drop_priv, Alter_priv FROM mysql.db WHERE User = %s AND Host = %s ORDER BY Db",
+                    (u['User'], u['Host'])
+                )
+                db_grants = cursor.fetchall()
+                dbs = []
+                for g in db_grants:
+                    is_ro = (
+                        g.get('Select_priv') == 'Y' and
+                        g.get('Insert_priv') == 'N' and
+                        g.get('Update_priv') == 'N' and
+                        g.get('Delete_priv') == 'N' and
+                        g.get('Create_priv') == 'N' and
+                        g.get('Drop_priv') == 'N' and
+                        g.get('Alter_priv') == 'N'
+                    )
+                    dbs.append({
+                        'db_name': g['Db'],
+                        'permission': 'readonly' if is_ro else 'readwrite',
+                        'permission_label': 'Read Only' if is_ro else 'Read & Write'
+                    })
+                
+                users.append({
+                    'User': u['User'],
+                    'Host': u['Host'],
+                    'databases': dbs,
+                    'is_unassigned': len(dbs) == 0
+                })
+            return users
+    except Exception:
+        return []
     finally:
         if conn:
             conn.close()
