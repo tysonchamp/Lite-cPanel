@@ -74,8 +74,8 @@ def get_databases():
 
 def get_database_details():
     """
-    Returns a list of dicts with db name, plus all users and their allowed hosts that
-    have privileges on each database.
+    Returns a list of dicts with db name, plus all users and their allowed hosts and
+    permissions (readonly vs readwrite) that have privileges on each database.
     """
     conn = get_mysql_connection()
     if not conn: return []
@@ -87,12 +87,31 @@ def get_database_details():
 
             result = []
             for db in raw_dbs:
-                db_escaped = db.replace('`', '``')
                 cursor.execute(
-                    "SELECT User, Host FROM mysql.db WHERE Db = %s ORDER BY User, Host",
+                    "SELECT User, Host, Select_priv, Insert_priv, Update_priv, Delete_priv, "
+                    "Create_priv, Drop_priv, Alter_priv "
+                    "FROM mysql.db WHERE Db = %s ORDER BY User, Host",
                     (db,)
                 )
-                users = cursor.fetchall()  # [{User:..., Host:...}, ...]
+                raw_users = cursor.fetchall()
+                users = []
+                for u in raw_users:
+                    # Check if user is read-only (SELECT granted, no write/modify privileges)
+                    is_ro = (
+                        u.get('Select_priv') == 'Y' and
+                        u.get('Insert_priv') == 'N' and
+                        u.get('Update_priv') == 'N' and
+                        u.get('Delete_priv') == 'N' and
+                        u.get('Create_priv') == 'N' and
+                        u.get('Drop_priv') == 'N' and
+                        u.get('Alter_priv') == 'N'
+                    )
+                    users.append({
+                        'User': u['User'],
+                        'Host': u['Host'],
+                        'permission': 'readonly' if is_ro else 'readwrite',
+                        'permission_label': 'Read Only' if is_ro else 'Read & Write'
+                    })
                 result.append({'name': db, 'users': users})
             return result
     finally:
@@ -262,3 +281,157 @@ def setup_phpmyadmin_signon():
         return True, "Signon features removed."
     except Exception as e:
         return False, f"Error during cleanup: {str(e)}"
+
+def get_all_mysql_users():
+    """
+    Returns a list of distinct user accounts (excluding system accounts)
+    for easy selection when attaching users.
+    """
+    conn = get_mysql_connection()
+    if not conn: return []
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT DISTINCT User FROM mysql.user WHERE User NOT IN "
+                "('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema', 'debian-sys-maint') "
+                "ORDER BY User"
+            )
+            return [row['User'] for row in cursor.fetchall()]
+    except Exception:
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def attach_user_to_db(db_name, db_user, host='localhost', password=None, permission='readonly'):
+    """
+    Attaches a user to a database with specified permission ('readonly' or 'readwrite').
+    If the user does not exist in MySQL, creates the user with the given password.
+    If the user exists, optionally updates their password if provided.
+    """
+    if permission not in ('readonly', 'readwrite'):
+        return False, "Invalid permission level. Must be 'readonly' or 'readwrite'."
+
+    conn = get_mysql_connection()
+    if not conn: return False, "Could not connect to database server."
+
+    try:
+        with conn.cursor() as cursor:
+            db_name_esc = db_name.replace('`', '``')
+            user_esc = db_user.replace("'", "''")
+            host_esc = host.replace("'", "''")
+
+            # Check if user already exists
+            cursor.execute("SELECT User, Host FROM mysql.user WHERE User = %s AND Host = %s", (db_user, host))
+            user_exists = cursor.fetchone() is not None
+
+            if not user_exists:
+                if not password:
+                    return False, f"Password is required to create new user '{db_user}'@'{host}'."
+                cursor.execute(
+                    f"CREATE USER '{user_esc}'@'{host_esc}' IDENTIFIED BY %s",
+                    (password,)
+                )
+            else:
+                if password:
+                    cursor.execute(
+                        f"ALTER USER '{user_esc}'@'{host_esc}' IDENTIFIED BY %s",
+                        (password,)
+                    )
+
+            if permission == 'readonly':
+                try:
+                    cursor.execute(f"REVOKE ALL PRIVILEGES ON `{db_name_esc}`.* FROM '{user_esc}'@'{host_esc}'")
+                except pymysql.MySQLError:
+                    pass
+                cursor.execute(f"GRANT SELECT, SHOW VIEW ON `{db_name_esc}`.* TO '{user_esc}'@'{host_esc}'")
+            else:
+                cursor.execute(f"GRANT ALL PRIVILEGES ON `{db_name_esc}`.* TO '{user_esc}'@'{host_esc}'")
+
+            cursor.execute("FLUSH PRIVILEGES")
+        conn.commit()
+        perm_label = "Read Only" if permission == 'readonly' else "Read & Write"
+        return True, f"User '{db_user}'@'{host}' successfully attached to '{db_name}' with {perm_label} permissions."
+    except pymysql.MySQLError as e:
+        return False, f"Database error: {str(e)}"
+    finally:
+        if conn:
+            conn.close()
+
+def set_user_permissions(db_name, db_user, host, permission='readonly'):
+    """
+    Updates the permissions of an existing user on a database to 'readonly' or 'readwrite'.
+    """
+    if permission not in ('readonly', 'readwrite'):
+        return False, "Invalid permission level. Must be 'readonly' or 'readwrite'."
+
+    conn = get_mysql_connection()
+    if not conn: return False, "Could not connect to database server."
+
+    try:
+        with conn.cursor() as cursor:
+            db_name_esc = db_name.replace('`', '``')
+            user_esc = db_user.replace("'", "''")
+            host_esc = host.replace("'", "''")
+
+            if permission == 'readonly':
+                try:
+                    cursor.execute(f"REVOKE ALL PRIVILEGES ON `{db_name_esc}`.* FROM '{user_esc}'@'{host_esc}'")
+                except pymysql.MySQLError:
+                    pass
+                cursor.execute(f"GRANT SELECT, SHOW VIEW ON `{db_name_esc}`.* TO '{user_esc}'@'{host_esc}'")
+            else:
+                cursor.execute(f"GRANT ALL PRIVILEGES ON `{db_name_esc}`.* TO '{user_esc}'@'{host_esc}'")
+
+            cursor.execute("FLUSH PRIVILEGES")
+        conn.commit()
+        perm_label = "Read Only" if permission == 'readonly' else "Read & Write (All Privileges)"
+        return True, f"Permissions for '{db_user}'@'{host}' on '{db_name}' updated to {perm_label}."
+    except pymysql.MySQLError as e:
+        return False, f"Database error: {str(e)}"
+    finally:
+        if conn:
+            conn.close()
+
+def detach_user_from_db(db_name, db_user, host):
+    """
+    Detaches a user from a database by revoking all privileges on it.
+    If the user has no privileges on any other database, drops the user from MySQL.
+    """
+    conn = get_mysql_connection()
+    if not conn: return False, "Could not connect to database server."
+
+    try:
+        with conn.cursor() as cursor:
+            db_name_esc = db_name.replace('`', '``')
+            user_esc = db_user.replace("'", "''")
+            host_esc = host.replace("'", "''")
+
+            # Check if this user has grants on ANY other database
+            cursor.execute(
+                "SELECT COUNT(*) as cnt FROM mysql.db WHERE User = %s AND Host = %s AND Db != %s",
+                (db_user, host, db_name)
+            )
+            row = cursor.fetchone()
+            other_db_count = row['cnt'] if row else 0
+
+            # Revoke privileges on this DB
+            try:
+                cursor.execute(f"REVOKE ALL PRIVILEGES ON `{db_name_esc}`.* FROM '{user_esc}'@'{host_esc}'")
+            except pymysql.MySQLError:
+                pass
+
+            msg = f"User '{db_user}'@'{host}' detached from '{db_name}'."
+            if other_db_count == 0:
+                cursor.execute(f"DROP USER IF EXISTS '{user_esc}'@'{host_esc}'")
+                msg += f" (Exclusive user '{db_user}'@'{host}' deleted from MySQL)"
+
+            cursor.execute("FLUSH PRIVILEGES")
+        conn.commit()
+        return True, msg
+    except pymysql.MySQLError as e:
+        return False, f"Database error: {str(e)}"
+    finally:
+        if conn:
+            conn.close()
+

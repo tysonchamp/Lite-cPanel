@@ -49,8 +49,11 @@
 <div class="row">
     <div class="col-12">
         <div class="card shadow-sm border-0">
-            <div class="card-header bg-white border-bottom">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Existing Databases</h5>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="openAttachUserModal()">
+                    <i class="fas fa-user-plus me-1"></i>Attach User to Database
+                </button>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -58,7 +61,7 @@
                         <thead class="bg-light">
                             <tr>
                                 <th>Database</th>
-                                <th>Users</th>
+                                <th>Users &amp; Permissions</th>
                                 <th class="text-end">Actions</th>
                             </tr>
                         </thead>
@@ -66,53 +69,87 @@
                             {% for db in db_details %}
                             <tr>
                                 <!-- DB Name -->
-                                <td class="fw-bold">
+                                <td class="fw-bold align-top pt-3">
                                     <i class="fas fa-database text-primary me-2"></i>{{ db.name }}
                                 </td>
 
-                                <!-- Users + host badges -->
+                                <!-- Users + host badges + permissions -->
                                 <td>
                                     {% if db.users %}
                                         {% for u in db.users %}
-                                        <div class="d-flex align-items-center gap-2 mb-1">
-                                            <span class="font-monospace fw-semibold">{{ u.User }}</span>
+                                        <div class="d-flex align-items-center flex-wrap gap-2 mb-2 p-1 rounded bg-light border">
+                                            <span class="font-monospace fw-semibold"><i class="fas fa-user text-muted me-1"></i>{{ u.User }}</span>
                                             {% if u.Host == 'localhost' %}
                                             <span class="badge bg-secondary" title="Local access only">
                                                 <i class="fas fa-house me-1"></i>localhost
                                             </span>
                                             {% elif u.Host == '%' %}
-                                            <span class="badge bg-warning text-dark" title="Remote access allowed">
+                                            <span class="badge bg-warning text-dark" title="Remote access allowed from any host">
                                                 <i class="fas fa-globe me-1"></i>Remote (%)
                                             </span>
                                             {% else %}
-                                            <span class="badge bg-info text-dark">{{ u.Host }}</span>
+                                            <span class="badge bg-info text-dark" title="Specific host: {{ u.Host }}"><i class="fas fa-network-wired me-1"></i>{{ u.Host }}</span>
                                             {% endif %}
 
-                                            <!-- Change Password trigger -->
-                                            <button class="btn btn-link btn-sm p-0 text-muted" title="Change Password"
-                                                onclick="openChangePassword('{{ u.User }}', '{{ u.Host }}')">
-                                                <i class="fas fa-key"></i>
-                                            </button>
+                                            <!-- Permission Badge -->
+                                            {% if u.permission == 'readonly' %}
+                                            <span class="badge bg-success" title="Read Only: SELECT &amp; SHOW VIEW">
+                                                <i class="fas fa-eye me-1"></i>Read Only
+                                            </span>
+                                            {% else %}
+                                            <span class="badge bg-primary" title="All Privileges: Read, Write &amp; Modify All">
+                                                <i class="fas fa-shield-alt me-1"></i>All Privileges
+                                            </span>
+                                            {% endif %}
 
-                                            <!-- Toggle Host trigger -->
-                                            <button type="button" class="btn btn-link btn-sm p-0"
-                                                    title="Manage Host Access"
-                                                    {% if u.Host == 'localhost' %}
-                                                    style="color: #6c757d;"
-                                                    {% else %}
-                                                    style="color: #f0ad4e;"
-                                                    {% endif %}
-                                                    onclick="openHostModal('{{ db.name }}', '{{ u.User }}', '{{ u.Host }}')">                                                    <i class="fas fa-network-wired"></i>
-                                            </button>
+                                            <div class="ms-auto d-flex align-items-center gap-1">
+                                                <!-- Change Password trigger -->
+                                                <button class="btn btn-link btn-sm p-1 text-muted" title="Change Password"
+                                                    onclick="openChangePassword('{{ u.User }}', '{{ u.Host }}')">
+                                                    <i class="fas fa-key"></i>
+                                                </button>
+
+                                                <!-- Toggle Host trigger -->
+                                                <button type="button" class="btn btn-link btn-sm p-1"
+                                                        title="Manage Host Access"
+                                                        {% if u.Host == 'localhost' %}
+                                                        style="color: #6c757d;"
+                                                        {% else %}
+                                                        style="color: #f0ad4e;"
+                                                        {% endif %}
+                                                        onclick="openHostModal('{{ db.name }}', '{{ u.User }}', '{{ u.Host }}')">
+                                                    <i class="fas fa-network-wired"></i>
+                                                </button>
+
+                                                <!-- Modify Permissions trigger -->
+                                                <button type="button" class="btn btn-link btn-sm p-1 text-info"
+                                                        title="Modify Permissions (Read Only vs All Privileges)"
+                                                        onclick="openPermissionModal('{{ db.name }}', '{{ u.User }}', '{{ u.Host }}', '{{ u.permission }}')">
+                                                    <i class="fas fa-user-shield"></i>
+                                                </button>
+
+                                                <!-- Detach User trigger -->
+                                                <button type="button" class="btn btn-link btn-sm p-1 text-danger"
+                                                        title="Detach User from this Database"
+                                                        onclick="openDetachModal('{{ db.name }}', '{{ u.User }}', '{{ u.Host }}')">
+                                                    <i class="fas fa-user-minus"></i>
+                                                </button>
+                                            </div>
                                         </div>
                                         {% endfor %}
                                     {% else %}
-                                        <span class="text-muted small"><em>No users found</em></span>
+                                        <span class="text-muted small"><em>No users assigned</em></span>
                                     {% endif %}
+                                    <div class="mt-1">
+                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2"
+                                                onclick="openAttachUserModal('{{ db.name }}')">
+                                            <i class="fas fa-user-plus me-1"></i>Attach User
+                                        </button>
+                                    </div>
                                 </td>
 
                                 <!-- Drop DB -->
-                                <td class="text-end">
+                                <td class="text-end align-top pt-3">
                                     <form method="POST" action="{{ url_for('databases') }}" class="d-inline"
                                           onsubmit="return confirm('Drop {{ db.name }}? This is permanent.');">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -242,6 +279,229 @@
     </div>
 </div>
 
+<!-- Attach User to Database Modal -->
+<div class="modal fade" id="attachUserModal" tabindex="-1" aria-labelledby="attachUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('databases') }}" onsubmit="return validateAttachUserForm()">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="attach_user">
+                <input type="hidden" name="host" id="attach_final_host" value="localhost">
+
+                <div class="modal-header">
+                    <h5 class="modal-title" id="attachUserModalLabel">
+                        <i class="fas fa-user-plus me-2 text-primary"></i>Attach User to Database
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Database Selection -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Target Database</label>
+                        <select class="form-select" name="db_name" id="attach_db_name" required>
+                            {% for d in all_dbs %}
+                            <option value="{{ d }}">{{ d }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Database User -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Database User</label>
+                        <input type="text" class="form-control" name="db_user" id="attach_db_user"
+                               list="existingUsersList" required placeholder="e.g. mcp_readonly">
+                        <datalist id="existingUsersList">
+                            {% for usr in existing_users %}
+                            <option value="{{ usr }}">
+                            {% endfor %}
+                        </datalist>
+                        <div class="form-text">Type a new username or select an existing MySQL user.</div>
+                    </div>
+
+                    <!-- Password -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">User Password</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" name="db_pass" id="attach_db_pass" placeholder="••••••••" autocomplete="new-password">
+                            <button type="button" class="btn btn-outline-secondary" onclick="generatePassword('attach_db_pass')" title="Generate Password">
+                                <i class="fas fa-random"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">Required for a new user. Leave blank if attaching an existing user with their current password.</div>
+                    </div>
+
+                    <!-- Host Access -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Allow Access From (Host)</label>
+                        <div class="d-flex flex-column gap-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="attach_host_choice" id="attach_host_local"
+                                       value="localhost" checked onchange="toggleAttachIpField(false)">
+                                <label class="form-check-label" for="attach_host_local">
+                                    <i class="fas fa-house me-1 text-secondary"></i>
+                                    <strong>Local only (localhost)</strong> — <span class="text-muted">this server only</span>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="attach_host_choice" id="attach_host_ip"
+                                       value="__custom__" onchange="toggleAttachIpField(true)">
+                                <label class="form-check-label" for="attach_host_ip">
+                                    <i class="fas fa-shield-alt me-1 text-info"></i>
+                                    <strong>Specific IP address</strong> — <span class="text-muted">e.g. your MCP server IP</span>
+                                </label>
+                            </div>
+                            <div id="attachIpInputWrapper" class="ps-4" style="display:none;">
+                                <input type="text" class="form-control form-control-sm" id="attach_custom_ip"
+                                       placeholder="e.g. 217.216.79.107">
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="attach_host_choice" id="attach_host_any"
+                                       value="%" onchange="toggleAttachIpField(false)">
+                                <label class="form-check-label" for="attach_host_any">
+                                    <i class="fas fa-globe me-1 text-warning"></i>
+                                    <strong>Any host (%)</strong> — <span class="text-muted">accessible from anywhere</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Permission Selection -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Permission Level</label>
+                        <div class="d-flex flex-column gap-2">
+                            <div class="card p-2 border border-success-subtle bg-success-subtle bg-opacity-10">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="permission" id="perm_ro" value="readonly" checked>
+                                    <label class="form-check-label fw-semibold text-success" for="perm_ro">
+                                        <i class="fas fa-eye me-1"></i>Read Only
+                                        <span class="badge bg-success ms-2">Recommended for MCP / Safety</span>
+                                    </label>
+                                    <div class="text-muted small mt-1">
+                                        Grants <code>SELECT</code> and <code>SHOW VIEW</code> privileges only. Cannot modify, insert, update, delete, drop, or alter tables.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card p-2 border">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="permission" id="perm_rw" value="readwrite">
+                                    <label class="form-check-label fw-semibold text-primary" for="perm_rw">
+                                        <i class="fas fa-edit me-1"></i>Read &amp; Write / Modify All
+                                    </label>
+                                    <div class="text-muted small mt-1">
+                                        Grants <code>ALL PRIVILEGES</code> on the database. Full permission to read, write, alter, and delete data.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-check me-1"></i>Attach User
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modify Permissions Modal -->
+<div class="modal fade" id="permissionModal" tabindex="-1" aria-labelledby="permissionModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('databases') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="set_permissions">
+                <input type="hidden" name="db_name" id="modperm_db_name">
+                <input type="hidden" name="db_user" id="modperm_db_user">
+                <input type="hidden" name="host" id="modperm_host">
+
+                <div class="modal-header">
+                    <h5 class="modal-title" id="permissionModalLabel">
+                        <i class="fas fa-user-shield me-2 text-info"></i>Modify User Permissions
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted mb-3">
+                        Configuring permissions for user <strong id="modperm_user_display"></strong>@<code id="modperm_host_display"></code>
+                        on database <strong id="modperm_db_display"></strong>:
+                    </p>
+
+                    <div class="d-flex flex-column gap-2">
+                        <div class="card p-2 border border-success-subtle bg-success-subtle bg-opacity-10">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="permission" id="mod_perm_ro" value="readonly">
+                                <label class="form-check-label fw-semibold text-success" for="mod_perm_ro">
+                                    <i class="fas fa-eye me-1"></i>Read Only
+                                    <span class="badge bg-success ms-2">Safe for MCP</span>
+                                </label>
+                                <div class="text-muted small mt-1">
+                                    Grants <code>SELECT</code> and <code>SHOW VIEW</code> privileges only. Disables all insert, update, delete, drop, and alter operations.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card p-2 border">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="permission" id="mod_perm_rw" value="readwrite">
+                                <label class="form-check-label fw-semibold text-primary" for="mod_perm_rw">
+                                    <i class="fas fa-edit me-1"></i>Read &amp; Write / Modify All
+                                </label>
+                                <div class="text-muted small mt-1">
+                                    Grants <code>ALL PRIVILEGES</code> on this database. Full read, write, alter, and delete access.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Permissions</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Detach User Modal -->
+<div class="modal fade" id="detachUserModal" tabindex="-1" aria-labelledby="detachUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('databases') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="detach_user">
+                <input type="hidden" name="db_name" id="detach_db_name">
+                <input type="hidden" name="db_user" id="detach_db_user">
+                <input type="hidden" name="host" id="detach_host">
+
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger" id="detachUserModalLabel">
+                        <i class="fas fa-user-minus me-2"></i>Detach User from Database
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        Are you sure you want to remove user <strong id="detach_user_display"></strong>@<code id="detach_host_display"></code>
+                        from database <strong id="detach_db_display"></strong>?
+                    </p>
+                    <div class="alert alert-warning py-2 mb-0 small">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        This user will lose all privileges on this database. If the user does not have access to any other database, their MySQL user account will also be removed.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Detach User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 function openChangePassword(user, host) {
     document.getElementById('cpw_user').value          = user;
@@ -291,6 +551,63 @@ function applyHostSelection() {
         selected.value = ip;
     }
     return true;
+}
+
+function openAttachUserModal(dbName) {
+    if (dbName) {
+        document.getElementById('attach_db_name').value = dbName;
+    }
+    document.getElementById('attach_db_user').value = '';
+    document.getElementById('attach_db_pass').value = '';
+    document.getElementById('attach_host_local').checked = true;
+    toggleAttachIpField(false);
+    document.getElementById('perm_ro').checked = true;
+    new bootstrap.Modal(document.getElementById('attachUserModal')).show();
+}
+
+function toggleAttachIpField(show) {
+    document.getElementById('attachIpInputWrapper').style.display = show ? 'block' : 'none';
+    if (!show) document.getElementById('attach_custom_ip').value = '';
+}
+
+function validateAttachUserForm() {
+    const selectedHost = document.querySelector('input[name="attach_host_choice"]:checked');
+    if (!selectedHost) { alert('Please select a host option.'); return false; }
+
+    let finalHost = selectedHost.value;
+    if (finalHost === '__custom__') {
+        const ip = document.getElementById('attach_custom_ip').value.trim();
+        if (!ip) { alert('Please enter a specific IP address.'); return false; }
+        finalHost = ip;
+    }
+    document.getElementById('attach_final_host').value = finalHost;
+    return true;
+}
+
+function openPermissionModal(dbName, user, host, currentPerm) {
+    document.getElementById('modperm_db_name').value = dbName;
+    document.getElementById('modperm_db_user').value = user;
+    document.getElementById('modperm_host').value = host;
+    document.getElementById('modperm_user_display').textContent = user;
+    document.getElementById('modperm_host_display').textContent = host;
+    document.getElementById('modperm_db_display').textContent = dbName;
+
+    if (currentPerm === 'readonly') {
+        document.getElementById('mod_perm_ro').checked = true;
+    } else {
+        document.getElementById('mod_perm_rw').checked = true;
+    }
+    new bootstrap.Modal(document.getElementById('permissionModal')).show();
+}
+
+function openDetachModal(dbName, user, host) {
+    document.getElementById('detach_db_name').value = dbName;
+    document.getElementById('detach_db_user').value = user;
+    document.getElementById('detach_host').value = host;
+    document.getElementById('detach_user_display').textContent = user;
+    document.getElementById('detach_host_display').textContent = host;
+    document.getElementById('detach_db_display').textContent = dbName;
+    new bootstrap.Modal(document.getElementById('detachUserModal')).show();
 }
 
 function generatePassword(targetId) {

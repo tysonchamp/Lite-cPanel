@@ -1,11 +1,12 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import os
 import glob
 import json
-from urllib.parse import quote
-
-import glob
+import re
 import subprocess
+import fcntl
+import tempfile
+from urllib.parse import quote
 
 # Ensure consistent environment for PM2 and other system tools
 if os.getuid() == 0:
@@ -18,7 +19,6 @@ paths = [
     "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"
 ]
 
-import glob
 nvm_node_paths = glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin"))
 if nvm_node_paths:
     nvm_node_paths.sort(reverse=True)
@@ -27,16 +27,26 @@ if nvm_node_paths:
 
 os.environ["PATH"] = ":".join(paths) + ":" + os.environ.get("PATH", "")
 
-# Auto-Resurrect PM2 processes on startup to ensure persistence
+# Auto-Resurrect PM2 processes on startup to ensure persistence (only once across gunicorn workers)
 try:
-    from process_mgr import get_pm2_cmd, PM2_HOME
-    env = os.environ.copy()
-    env["PM2_HOME"] = PM2_HOME
-    subprocess.run([get_pm2_cmd(), 'resurrect'], capture_output=True, text=True, env=env)
+    _resurrect_lock_file = os.path.join(tempfile.gettempdir(), 'cpanel_pm2_resurrect.lock')
+    _resurrect_lock_fd = open(_resurrect_lock_file, 'w')
+    try:
+        fcntl.flock(_resurrect_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        from process_mgr import get_pm2_cmd, PM2_HOME
+        env = os.environ.copy()
+        env["PM2_HOME"] = PM2_HOME
+        subprocess.run([get_pm2_cmd(), 'resurrect'], capture_output=True, text=True, env=env)
+    except (BlockingIOError, OSError):
+        pass
+    finally:
+        try:
+            fcntl.flock(_resurrect_lock_fd, fcntl.LOCK_UN)
+            _resurrect_lock_fd.close()
+        except Exception:
+            pass
 except Exception:
     pass
-
-import psutil
 
 import psutil
 from auth import check_system_password, login_required
@@ -1163,7 +1173,9 @@ def domain_logs_fetch(domain):
 
 from database_mgr import (get_databases, get_database_details, create_database,
                            delete_database, setup_phpmyadmin_signon,
-                           change_user_password, update_user_host)
+                           change_user_password, update_user_host,
+                           attach_user_to_db, set_user_permissions,
+                           detach_user_from_db, get_all_mysql_users)
 
 @app.route('/databases', methods=['GET', 'POST'])
 @login_required
@@ -1222,10 +1234,77 @@ def databases():
             success, message = update_user_host(db_name, db_user, old_host, new_host)
             flash(message, 'success' if success else 'danger')
 
+        elif action == 'attach_user':
+            db_name    = (request.form.get('db_name') or '').strip()
+            db_user    = (request.form.get('db_user') or '').strip()
+            db_pass    = request.form.get('db_pass')
+            host       = (request.form.get('host') or 'localhost').strip()
+            permission = (request.form.get('permission') or 'readonly').strip()
+
+            v1, e1 = validate_input(db_name, 'db_name')
+            v2, e2 = validate_input(db_user, 'username')
+            if not v1 or not v2:
+                flash(f"Validation failed: {e1 or e2}", "danger")
+                return redirect(url_for('databases'))
+
+            if not host or not re.match(r'^[a-zA-Z0-9_\.\-:%]+$', host):
+                flash("Invalid host specification.", "danger")
+                return redirect(url_for('databases'))
+
+            if permission not in ('readonly', 'readwrite'):
+                flash("Invalid permission selected. Must be Read Only or Read & Write.", "danger")
+                return redirect(url_for('databases'))
+
+            success, message = attach_user_to_db(db_name, db_user, host, db_pass or None, permission)
+            flash(message, 'success' if success else 'danger')
+
+        elif action == 'set_permissions':
+            db_name    = (request.form.get('db_name') or '').strip()
+            db_user    = (request.form.get('db_user') or '').strip()
+            host       = (request.form.get('host') or '').strip()
+            permission = (request.form.get('permission') or 'readonly').strip()
+
+            v1, e1 = validate_input(db_name, 'db_name')
+            v2, e2 = validate_input(db_user, 'username')
+            if not v1 or not v2:
+                flash(f"Validation failed: {e1 or e2}", "danger")
+                return redirect(url_for('databases'))
+
+            if not host or not re.match(r'^[a-zA-Z0-9_\.\-:%]+$', host):
+                flash("Invalid host specification.", "danger")
+                return redirect(url_for('databases'))
+
+            if permission not in ('readonly', 'readwrite'):
+                flash("Invalid permission selected. Must be Read Only or Read & Write.", "danger")
+                return redirect(url_for('databases'))
+
+            success, message = set_user_permissions(db_name, db_user, host, permission)
+            flash(message, 'success' if success else 'danger')
+
+        elif action == 'detach_user':
+            db_name = (request.form.get('db_name') or '').strip()
+            db_user = (request.form.get('db_user') or '').strip()
+            host    = (request.form.get('host') or '').strip()
+
+            v1, e1 = validate_input(db_name, 'db_name')
+            v2, e2 = validate_input(db_user, 'username')
+            if not v1 or not v2:
+                flash(f"Validation failed: {e1 or e2}", "danger")
+                return redirect(url_for('databases'))
+
+            if not host or not re.match(r'^[a-zA-Z0-9_\.\-:%]+$', host):
+                flash("Invalid host specification.", "danger")
+                return redirect(url_for('databases'))
+
+            success, message = detach_user_from_db(db_name, db_user, host)
+            flash(message, 'success' if success else 'danger')
+
         return redirect(url_for('databases'))
 
     db_details = get_database_details()
-    return render_template('databases.html', db_details=db_details)
+    existing_users = get_all_mysql_users()
+    all_dbs = [db['name'] for db in db_details]
+    return render_template('databases.html', db_details=db_details, existing_users=existing_users, all_dbs=all_dbs)
 
 from mongodb_mgr import (check_mongodb_installed, install_mongodb, get_databases as get_mongo_dbs,
                          create_database as create_mongo_db, delete_database as delete_mongo_db,
