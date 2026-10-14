@@ -1176,13 +1176,18 @@ from database_mgr import (get_databases, get_database_details, create_database,
                            change_user_password, update_user_host,
                            attach_user_to_db, set_user_permissions,
                            detach_user_from_db, get_all_mysql_users,
-                           delete_mysql_user, get_all_users_details)
+                           delete_mysql_user, get_all_users_details,
+                           SYSTEM_USERS)
 
 @app.route('/databases', methods=['GET', 'POST'])
 @login_required
 def databases():
     if request.method == 'POST':
         action = request.form.get('action')
+        target_user = (request.form.get('db_user') or '').strip().lower()
+        if target_user and target_user in [s.lower() for s in SYSTEM_USERS]:
+            flash("Protected system accounts (mysql, mariadb.sys, admin, root) cannot be modified or deleted.", "danger")
+            return redirect(url_for('databases'))
 
         if action == 'create':
             db_name = request.form.get('db_name')

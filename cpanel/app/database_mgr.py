@@ -4,6 +4,18 @@ import secrets
 import subprocess
 import crypt
 
+SYSTEM_USERS = (
+    'root',
+    'mysql',
+    'mariadb.sys',
+    'mysql.sys',
+    'mysql.session',
+    'mysql.infoschema',
+    'debian-sys-maint',
+    'admin',
+    'phpmyadmin'
+)
+
 def get_mysql_connection():
     """
     Attempts to connect to MySQL as root.
@@ -96,6 +108,8 @@ def get_database_details():
                 raw_users = cursor.fetchall()
                 users = []
                 for u in raw_users:
+                    if u['User'].lower() in [s.lower() for s in SYSTEM_USERS]:
+                        continue
                     # Check if user is read-only (SELECT granted, no write/modify privileges)
                     is_ro = (
                         u.get('Select_priv') == 'Y' and
@@ -291,10 +305,10 @@ def get_all_mysql_users():
     if not conn: return []
     try:
         with conn.cursor() as cursor:
+            placeholders = ', '.join(['%s'] * len(SYSTEM_USERS))
             cursor.execute(
-                "SELECT DISTINCT User FROM mysql.user WHERE User NOT IN "
-                "('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema', 'debian-sys-maint') "
-                "ORDER BY User"
+                f"SELECT DISTINCT User FROM mysql.user WHERE LOWER(User) NOT IN ({placeholders}) ORDER BY User",
+                [s.lower() for s in SYSTEM_USERS]
             )
             return [row['User'] for row in cursor.fetchall()]
     except Exception:
@@ -309,6 +323,9 @@ def attach_user_to_db(db_name, db_user, host='localhost', password=None, permiss
     If the user does not exist in MySQL, creates the user with the given password.
     If the user exists, optionally updates their password if provided.
     """
+    if db_user.lower() in [s.lower() for s in SYSTEM_USERS]:
+        return False, f"Protected system account '{db_user}' cannot be modified."
+
     if permission not in ('readonly', 'readwrite'):
         return False, "Invalid permission level. Must be 'readonly' or 'readwrite'."
 
@@ -362,6 +379,9 @@ def set_user_permissions(db_name, db_user, host, permission='readonly'):
     """
     Updates the permissions of an existing user on a database to 'readonly' or 'readwrite'.
     """
+    if db_user.lower() in [s.lower() for s in SYSTEM_USERS]:
+        return False, f"Protected system account '{db_user}' cannot be modified."
+
     if permission not in ('readonly', 'readwrite'):
         return False, "Invalid permission level. Must be 'readonly' or 'readwrite'."
 
@@ -398,6 +418,9 @@ def detach_user_from_db(db_name, db_user, host, delete_user=False):
     Detaches a user from a database by revoking all privileges on it.
     If delete_user is True, also permanently deletes the user account from MySQL.
     """
+    if db_user.lower() in [s.lower() for s in SYSTEM_USERS]:
+        return False, f"Protected system account '{db_user}' cannot be detached."
+
     conn = get_mysql_connection()
     if not conn: return False, "Could not connect to database server."
 
@@ -431,6 +454,9 @@ def delete_mysql_user(db_user, host):
     """
     Permanently deletes a MySQL user account and all their database privileges.
     """
+    if db_user.lower() in [s.lower() for s in SYSTEM_USERS]:
+        return False, f"Protected system account '{db_user}' cannot be deleted."
+
     conn = get_mysql_connection()
     if not conn: return False, "Could not connect to database server."
 
@@ -458,10 +484,10 @@ def get_all_users_details():
     if not conn: return []
     try:
         with conn.cursor() as cursor:
+            placeholders = ', '.join(['%s'] * len(SYSTEM_USERS))
             cursor.execute(
-                "SELECT User, Host FROM mysql.user WHERE User NOT IN "
-                "('root', 'mysql.sys', 'mysql.session', 'mysql.infoschema', 'debian-sys-maint') "
-                "ORDER BY User, Host"
+                f"SELECT User, Host FROM mysql.user WHERE LOWER(User) NOT IN ({placeholders}) ORDER BY User, Host",
+                [s.lower() for s in SYSTEM_USERS]
             )
             raw_users = cursor.fetchall()
             
