@@ -1,5 +1,17 @@
 # Updates:
 
+## 28.10.2026 (Git CI/CD & Automated Continuous Deployment)
+
+1. **Continuous Deployment (Vercel-like)**: Added automated Git push-to-deploy webhooks supporting GitHub, GitLab, and custom Git providers for Next.js apps, Docker containers, and traditional PHP/HTML domains.
+2. **Public & Private Repository Support**: Built-in automated ed25519 SSH Deploy Key generation with 1-click copy buttons for GitHub/GitLab Deploy Keys, alongside Personal Access Token (PAT) authentication for HTTPS private repos.
+3. **Application Lifecycle Handlers**:
+   - **Next.js**: Auto-detects package managers (`npm`, `pnpm`, `yarn`), installs dependencies, runs production build (`npm run build`), and performs zero-downtime reloads in PM2 (`pm2 reload`).
+   - **Docker**: Runs `docker compose up -d --build` with automatic dangling image cleanup (`docker image prune -f`).
+   - **Domains (PHP / HTML)**: Pulls latest code, runs `composer install` (if `composer.json` is present), enforces secure `www-data:www-data` ownership, and reloads PHP-FPM to clear bytecode OPCaches.
+4. **Secure Webhook Endpoint**: Added `/api/webhook/<token>` with cryptographic HMAC-SHA256 signature verification (`X-Hub-Signature-256` for GitHub, `X-Gitlab-Token` for GitLab), branch filtering, and non-blocking background queue execution.
+5. **Live Log Viewer**: Terminal-styled log streaming modal in the UI with automatic 2-second polling to observe real-time build progress and commit metadata.
+6. **Unified & Inline Controls**: Dedicated **Git CI/CD** dashboard in the sidebar, plus inline 1-click "Git Pull / Redeploy" action buttons directly in Domains, Next.js Apps, and Docker management tables.
+
 ## 08.7.2026 (Docker Container Manager)
 
 1. **Docker Container Management**: Added a new dedicated Docker UI to seamlessly list, start, stop, restart, remove, and run containers with custom configurations directly from the panel.
@@ -25,7 +37,7 @@
    - Added automatic service restarts (Apache/Nginx/PHP-FPM) triggered by permission changes to ensure changes take effect immediately.
    - Fixed "Connection reset by peer" errors in SFTP by resolving path resolution logic.
 
-21.04.2026 (Major UI & Analytics Update)
+## 21.04.2026 (Major UI & Analytics Update)
 
 1. **Slick Modern UI/UX**: Completely redesigned the dashboard and sidebar with a premium midnight-gradient aesthetic, refined typography (Inter), and glassmorphism-inspired cards.
 2. **Web Traffic Analytics**: Integrated **GoAccess** for real-time web traffic monitoring. Added a dedicated Traffic Monitor module providing per-domain hits, unique visitors, bandwidth stats, and full interactive HTML reports.
@@ -35,7 +47,7 @@
 6. **Terminal UX**: Upgraded the web terminal with a custom minimalist scrollbar and improved container styling for a pro-developer feel.
 7. **Infrastructure Refactoring**: Migrated to a centralized `base.html` architecture to improve panel stability and eliminate template-related Internal Server Errors.
 
-21.04.2026 (Initial Release)
+## 21.04.2026 (Initial Release)
 
 1. Implemented a full **Node.js Process Manager** powered by PM2, allowing live monitoring and control of background applications.
 2. Updated **Certbot** installation to the official Snap-based method for improved reliability on Ubuntu 22.04 and 24.04.
@@ -45,7 +57,7 @@
 6. Established strict **Project Guidelines** to ensure production-ready standards for future developments.
 
 
-13.04.2026
+## 13.04.2026
 
 1. Script has been updated to 3.0. Major changes has been done to support latest Ubuntu LTS versions and latest webmin versions. Also added support for installing certbot for ssl certificates.
 2. Added support for interactive menu to choose options during installation.
@@ -66,15 +78,15 @@
 17. Added support for installing FTP.
 18. Added support for installing SSH.
 
-24.01.2016
+## 24.01.2016
 
 1. Script has been updated to 1.0 with some new changes. Now users will have choice on installing webmin control panel and ssl certificates. Also http and https apache file config has been splited into two files for better management.
 
-27.01.2016
+## 27.01.2016
 
 1. Script has been updated to 1.1. Some minor changes has been done and permission checking has been added.
 
-13.11.2025
+## 13.11.2025
 
 1. Script has been updated to 2.0. Major changes has been done to support latest Ubuntu LTS versions and latest webmin versions. Also added support for installing certbot for ssl certificates.
 2. Added support for interactive menu to choose options during installation.

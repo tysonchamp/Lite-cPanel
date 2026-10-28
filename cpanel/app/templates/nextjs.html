@@ -112,8 +112,13 @@
                                             <input type="hidden" name="action" value="ssl_generate">
                                             <button type="submit" class="btn btn-sm btn-outline-primary" title="Generate SSL"><i class="fas fa-shield-alt"></i></button>
                                             {% endif %}
+                                        <!-- Git Deploy Action -->
+                                        <form method="POST" action="{{ url_for('cicd_quick_pull') }}" class="mb-0">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="domain" value="{{ app.domain }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Git Pull / Redeploy"><i class="fab fa-git-alt text-danger"></i></button>
                                         </form>
-                                        
+
                                         <!-- Delete Action -->
                                         <form method="POST" action="{{ url_for('nextjs') }}" class="mb-0" onsubmit="return confirm('Are you sure you want to delete this Next.js app configuration?');">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -2033,6 +2033,213 @@ def filemanager_download():
         return redirect(url_for('filemanager_route'))
     return send_file(safe, as_attachment=True)
 
+# ==============================================================================
+# GIT CI/CD & CONTINUOUS DEPLOYMENT ROUTES
+# ==============================================================================
+from cicd_mgr import (
+    get_cicd_repos, get_cicd_repo, save_cicd_repo, delete_cicd_repo,
+    generate_deploy_key, run_deployment_pipeline, get_deploy_logs,
+    verify_webhook_signature, get_available_targets
+)
+import secrets
+import threading
+from datetime import datetime
+
+@app.route('/cicd', methods=['GET', 'POST'])
+@login_required
+def cicd_route():
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'add':
+            name = request.form.get('name', '').strip()
+            app_type = request.form.get('app_type', 'domain')
+            target_dir = request.form.get('target_dir', '').strip()
+            repo_url = request.form.get('repo_url', '').strip()
+            branch = request.form.get('branch', 'main').strip() or 'main'
+            auth_type = request.form.get('auth_type', 'public')
+            auth_token = request.form.get('auth_token', '').strip()
+            auto_deploy = request.form.get('auto_deploy') == 'true'
+            initial_deploy = request.form.get('initial_deploy') == 'true'
+            build_cmd = request.form.get('build_cmd', '').strip()
+            pm2_name = request.form.get('pm2_name', '').strip() or name
+
+            if not name or not target_dir or not repo_url:
+                flash("Project name, target directory, and repository URL are required.", "danger")
+                return redirect(url_for('cicd_route'))
+
+            # Generate unique identifiers
+            repo_id = re.sub(r'[^a-zA-Z0-9_-]', '_', name).lower()
+            existing_repos = get_cicd_repos()
+            if repo_id in existing_repos:
+                repo_id = f"{repo_id}_{secrets.token_hex(3)}"
+
+            webhook_token = secrets.token_urlsafe(24)
+            webhook_secret = secrets.token_hex(20)
+
+            deploy_key_path = None
+            public_key = None
+            if auth_type == 'ssh':
+                deploy_key_path, public_key = generate_deploy_key(repo_id)
+
+            repo_config = {
+                'repo_id': repo_id,
+                'name': name,
+                'app_type': app_type,
+                'target_dir': os.path.abspath(target_dir),
+                'repo_url': repo_url,
+                'branch': branch,
+                'auth_type': auth_type,
+                'deploy_key_path': deploy_key_path,
+                'public_key': public_key,
+                'auth_token': auth_token,
+                'webhook_token': webhook_token,
+                'webhook_secret': webhook_secret,
+                'auto_deploy': auto_deploy,
+                'build_cmd': build_cmd,
+                'pm2_name': pm2_name,
+                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'last_status': 'idle',
+                'last_deployed_at': None,
+                'last_duration': None,
+                'last_trigger': None,
+                'last_commit': {}
+            }
+
+            ok, msg = save_cicd_repo(repo_config)
+            if ok:
+                flash(f"Repository '{name}' connected successfully!", "success")
+                if initial_deploy:
+                    threading.Thread(target=run_deployment_pipeline, args=(repo_id, 'Initial Deploy'), daemon=True).start()
+                    flash("Initial deployment triggered in the background. Check logs for progress.", "info")
+            else:
+                flash(f"Failed to save repository: {msg}", "danger")
+
+            return redirect(url_for('cicd_route'))
+
+        elif action == 'deploy':
+            repo_id = request.form.get('repo_id')
+            repo = get_cicd_repo(repo_id)
+            if not repo:
+                flash("Repository not found.", "danger")
+                return redirect(url_for('cicd_route'))
+
+            threading.Thread(target=run_deployment_pipeline, args=(repo_id, 'Dashboard Manual'), daemon=True).start()
+            flash(f"Deployment started for {repo.get('name')}! You can monitor live logs.", "success")
+            return redirect(url_for('cicd_route'))
+
+        elif action == 'delete':
+            repo_id = request.form.get('repo_id')
+            ok, msg = delete_cicd_repo(repo_id)
+            if ok:
+                flash(msg, "success")
+            else:
+                flash(msg, "danger")
+            return redirect(url_for('cicd_route'))
+
+    # GET request
+    repos = get_cicd_repos()
+    available_targets = get_available_targets()
+
+    auto_deploy_count = sum(1 for r in repos.values() if r.get('auto_deploy'))
+    success_count = sum(1 for r in repos.values() if r.get('last_status') == 'success')
+    ssh_keys_count = sum(1 for r in repos.values() if r.get('auth_type') == 'ssh')
+
+    # Construct webhook base URL
+    webhook_base_url = f"{request.scheme}://{request.host}/api/webhook/"
+
+    return render_template(
+        'cicd.html',
+        repos=repos,
+        available_targets=available_targets,
+        auto_deploy_count=auto_deploy_count,
+        success_count=success_count,
+        ssh_keys_count=ssh_keys_count,
+        webhook_base_url=webhook_base_url
+    )
+
+@app.route('/cicd/logs/<repo_id>')
+@login_required
+def cicd_logs_api(repo_id):
+    from flask import jsonify
+    repo = get_cicd_repo(repo_id)
+    if not repo:
+        return jsonify({'status': 'unknown', 'logs': 'Repository not found.'}), 404
+    logs = get_deploy_logs(repo_id)
+    return jsonify({
+        'status': repo.get('last_status', 'idle'),
+        'logs': logs
+    })
+
+@app.route('/cicd/quick-pull', methods=['POST'])
+@login_required
+def cicd_quick_pull():
+    domain = request.form.get('domain', '').strip()
+    repos = get_cicd_repos()
+    # Find matching repo for this domain
+    target_repo = None
+    for r in repos.values():
+        if r.get('name') == domain or r.get('target_dir', '').endswith(domain):
+            target_repo = r
+            break
+
+    if target_repo:
+        repo_id = target_repo.get('repo_id')
+        threading.Thread(target=run_deployment_pipeline, args=(repo_id, 'Quick Pull'), daemon=True).start()
+        flash(f"Deployment triggered for {target_repo.get('name')}! Check Git CI/CD logs.", "success")
+    else:
+        flash(f"No Git repository linked to '{domain}' yet. Visit Git CI/CD to connect your repository.", "warning")
+
+    return redirect(request.referrer or url_for('cicd_route'))
+
+@app.route('/api/webhook/<token>', methods=['POST'])
+@csrf.exempt
+def git_webhook_api(token):
+    from flask import jsonify
+    repos = get_cicd_repos()
+    repo = None
+    for r in repos.values():
+        if r.get('webhook_token') == token:
+            repo = r
+            break
+
+    if not repo:
+        return jsonify({'error': 'Webhook target not found'}), 404
+
+    if not repo.get('auto_deploy', True):
+        return jsonify({'message': 'Auto-deploy disabled for this repository'}), 200
+
+    # 1. Verify Signature
+    is_valid, reason = verify_webhook_signature(repo, request)
+    if not is_valid:
+        return jsonify({'error': f"Signature verification failed: {reason}"}), 403
+
+    # 2. Check Ping events (GitHub ping handshake)
+    if request.headers.get('X-GitHub-Event') == 'ping':
+        return jsonify({'message': 'Pong! Webhook connected successfully.'}), 200
+
+    # 3. Parse Push ref (branch check)
+    payload = request.get_json(silent=True) or {}
+    ref = payload.get('ref', '')
+    tracked_branch = repo.get('branch', 'main')
+
+    if ref:
+        expected_ref = f"refs/heads/{tracked_branch}"
+        if ref != expected_ref:
+            return jsonify({
+                'message': f"Ignored: Push was to '{ref}', repository is tracking '{expected_ref}'."
+            }), 200
+
+    # 4. Trigger deployment asynchronously in background
+    repo_id = repo.get('repo_id')
+    threading.Thread(target=run_deployment_pipeline, args=(repo_id, 'Webhook (Git Push)'), daemon=True).start()
+
+    return jsonify({
+        'status': 'queued',
+        'message': f"Deployment queued for {repo.get('name')}"
+    }), 200
+
 if __name__ == '__main__':
     # Run on all interfaces, port 2083
     app.run(host='0.0.0.0', port=2083, debug=True)
+

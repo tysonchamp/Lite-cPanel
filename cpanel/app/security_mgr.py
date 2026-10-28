@@ -43,7 +43,9 @@ ALLOWED_DIRS = [
     '/etc/apache2/sites-available/',
     '/etc/nginx/sites-available/',
     '/etc/nginx/conf.d/',
+    '/var/www/',
     '/var/www/html/',
+    '/var/lib/lite-cpanel/',
     '/etc/modsecurity/',
     '/etc/mysql/',
     '/etc/pure-ftpd/'

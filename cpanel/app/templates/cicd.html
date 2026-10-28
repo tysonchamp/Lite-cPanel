@@ -1,0 +1,635 @@
+{% extends 'base.html' %}
+
+{% block header_title %}Git CI/CD & Auto-Deploy{% endblock %}
+
+{% block extra_head %}
+<style>
+    .commit-box {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 0.82rem;
+    }
+    .terminal-window {
+        background: #0f172a;
+        color: #38bdf8;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+        font-size: 0.85rem;
+        padding: 18px;
+        border-radius: 8px;
+        max-height: 480px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        line-height: 1.5;
+        border: 1px solid #1e293b;
+    }
+    .terminal-window::-webkit-scrollbar {
+        width: 8px;
+    }
+    .terminal-window::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 4px;
+    }
+    .badge-building {
+        background-color: #f59e0b;
+        color: #fff;
+        animation: pulse-glow 1.5s infinite;
+    }
+    @keyframes pulse-glow {
+        0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+        70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+    }
+    .copy-btn {
+        transition: all 0.2s;
+    }
+    .copy-btn:hover {
+        transform: translateY(-1px);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Stat Counters Row -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-6">
+        <div class="stat-card">
+            <i class="fab fa-git-alt text-danger"></i>
+            <h3>Linked Repos</h3>
+            <p>{{ repos|length }}</p>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="stat-card">
+            <i class="fas fa-bolt text-warning"></i>
+            <h3>Auto-Deploy Active</h3>
+            <p>{{ auto_deploy_count }}</p>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="stat-card">
+            <i class="fas fa-check-circle text-success"></i>
+            <h3>Successful Builds</h3>
+            <p>{{ success_count }}</p>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="stat-card">
+            <i class="fas fa-shield-alt text-primary"></i>
+            <h3>SSH Deploy Keys</h3>
+            <p>{{ ssh_keys_count }}</p>
+        </div>
+    </div>
+</div>
+
+<!-- Header Card with Actions -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <h5 class="mb-1 fw-bold"><i class="fab fa-git-alt text-danger me-2"></i> Continuous Deployment (Vercel-like)</h5>
+                    <p class="text-muted small mb-0">Push to your GitHub or GitLab repository to automatically pull, build, and reload your Next.js apps, Docker containers, or traditional PHP domains.</p>
+                </div>
+                <div>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#connectRepoModal">
+                        <i class="fas fa-plus me-1"></i> Connect Git Repository
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Connected Repositories Table -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Connected Repositories</h5>
+                <span class="badge bg-light text-dark border">{{ repos|length }} Total</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Application / Domain</th>
+                                <th>Repository & Branch</th>
+                                <th>Latest Commit</th>
+                                <th>Deployment Status</th>
+                                <th>Last Deployed</th>
+                                <th class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for repo_id, repo in repos.items() %}
+                            <tr>
+                                <td>
+                                    <div class="fw-bold">{{ repo.name }}</div>
+                                    <div class="small text-muted font-monospace" style="font-size: 0.78rem;">{{ repo.target_dir }}</div>
+                                    {% if repo.app_type == 'nextjs' %}
+                                    <span class="badge bg-info text-dark" style="font-size: 0.7rem;"><i class="fab fa-react me-1"></i> Next.js</span>
+                                    {% elif repo.app_type == 'docker' %}
+                                    <span class="badge bg-primary" style="font-size: 0.7rem;"><i class="fab fa-docker me-1"></i> Docker</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary" style="font-size: 0.7rem;"><i class="fas fa-globe me-1"></i> PHP / Static</span>
+                                    {% endif %}
+                                    {% if repo.auto_deploy %}
+                                    <span class="badge bg-success" style="font-size: 0.7rem;" title="Auto-deploy on Git push is enabled"><i class="fas fa-bolt"></i> Webhook</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="small font-monospace text-truncate" style="max-width: 260px;" title="{{ repo.repo_url }}">
+                                        {{ repo.repo_url }}
+                                    </div>
+                                    <div class="mt-1">
+                                        <span class="badge bg-light text-dark border font-monospace">
+                                            <i class="fas fa-code-branch me-1 text-primary"></i> {{ repo.branch }}
+                                        </span>
+                                        {% if repo.auth_type == 'ssh' %}
+                                        <span class="badge bg-dark" style="font-size: 0.68rem;"><i class="fas fa-key me-1"></i> SSH Key</span>
+                                        {% elif repo.auth_type == 'token' %}
+                                        <span class="badge bg-secondary" style="font-size: 0.68rem;"><i class="fas fa-lock me-1"></i> Token</span>
+                                        {% else %}
+                                        <span class="badge bg-light text-muted border" style="font-size: 0.68rem;">Public</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if repo.last_commit and repo.last_commit.hash %}
+                                    <div class="commit-box" style="max-width: 250px;">
+                                        <div class="d-flex align-items-center justify-content-between mb-1">
+                                            <span class="badge bg-dark font-monospace">{{ repo.last_commit.hash }}</span>
+                                            <span class="text-muted" style="font-size: 0.7rem;">{{ repo.last_commit.date }}</span>
+                                        </div>
+                                        <div class="text-truncate fw-semibold" title="{{ repo.last_commit.message }}">{{ repo.last_commit.message }}</div>
+                                        <div class="text-muted small" style="font-size: 0.72rem;">by {{ repo.last_commit.author }}</div>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted small fst-italic">No commit info yet</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if repo.last_status == 'building' %}
+                                    <span class="badge badge-building px-2 py-1"><i class="fas fa-spinner fa-spin me-1"></i> Deploying...</span>
+                                    {% elif repo.last_status == 'success' %}
+                                    <span class="badge bg-success px-2 py-1"><i class="fas fa-check-circle me-1"></i> Succeeded</span>
+                                    {% elif repo.last_status == 'failed' %}
+                                    <span class="badge bg-danger px-2 py-1"><i class="fas fa-times-circle me-1"></i> Failed</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary px-2 py-1">Idle</span>
+                                    {% endif %}
+                                    {% if repo.last_duration %}
+                                    <small class="d-block text-muted mt-1" style="font-size: 0.72rem;">took {{ repo.last_duration }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="small text-muted">{{ repo.last_deployed_at or 'Never' }}</div>
+                                    {% if repo.last_trigger %}
+                                    <small class="text-muted" style="font-size: 0.72rem;">via {{ repo.last_trigger }}</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="d-flex justify-content-end gap-1 flex-wrap">
+                                        <!-- Deploy Now Button -->
+                                        <form method="POST" action="{{ url_for('cicd_route') }}" class="mb-0">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="action" value="deploy">
+                                            <input type="hidden" name="repo_id" value="{{ repo_id }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-success" title="Deploy / Pull Latest" {% if repo.last_status == 'building' %}disabled{% endif %}>
+                                                <i class="fas fa-sync-alt {% if repo.last_status == 'building' %}fa-spin{% endif %}"></i> Deploy
+                                            </button>
+                                        </form>
+
+                                        <!-- View Logs Button -->
+                                        <button type="button" class="btn btn-sm btn-outline-info" title="View Build Logs" onclick="viewDeployLogs('{{ repo_id }}', '{{ repo.name }}')">
+                                            <i class="fas fa-terminal"></i> Logs
+                                        </button>
+
+                                        <!-- Webhook & Keys Info -->
+                                        <button type="button" class="btn btn-sm btn-outline-primary" title="Webhook & Deploy Keys" onclick="showWebhookModal('{{ repo_id }}')">
+                                            <i class="fas fa-key"></i> Setup
+                                        </button>
+
+                                        <!-- Delete / Unlink Button -->
+                                        <form method="POST" action="{{ url_for('cicd_route') }}" class="mb-0" onsubmit="return confirm('Are you sure you want to unlink this repository? Local project files will not be deleted.');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="repo_id" value="{{ repo_id }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Unlink Repository">
+                                                <i class="fas fa-trash-alt"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center py-5 text-muted">
+                                    <i class="fab fa-git-alt fa-3x mb-3 text-secondary d-block"></i>
+                                    <h5>No Git Repositories Connected</h5>
+                                    <p class="small mb-3">Connect a Next.js app, Docker container, or domain to enable 1-click deployments and automated Git push webhooks.</p>
+                                    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#connectRepoModal">
+                                        <i class="fas fa-plus me-1"></i> Connect Your First Repo
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 1: Connect Git Repository -->
+<div class="modal fade" id="connectRepoModal" tabindex="-1" aria-labelledby="connectRepoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('cicd_route') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="add">
+                
+                <div class="modal-header border-bottom">
+                    <h5 class="modal-title fw-bold" id="connectRepoModalLabel"><i class="fab fa-git-alt text-danger me-2"></i> Connect Git Repository</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body p-4">
+                    <!-- Target Selection -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Link To Existing Application / Domain</label>
+                        <select class="form-select" id="targetSelect" onchange="onTargetSelectChange(this)">
+                            <option value="">-- Choose an application or domain --</option>
+                            {% for t in available_targets %}
+                            <option value="{{ t.id }}" 
+                                    data-name="{{ t.domain }}" 
+                                    data-type="{{ t.app_type }}" 
+                                    data-dir="{{ t.default_dir }}"
+                                    data-pm2="{{ t.pm2_name }}">
+                                {{ t.name }} [{{ t.default_dir }}]
+                            </option>
+                            {% endfor %}
+                            <option value="custom">-- Custom Directory --</option>
+                        </select>
+                        <small class="text-muted">Selecting an app automatically configures the project path and deployment lifecycle.</small>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Project Name / Domain</label>
+                            <input type="text" class="form-control" name="name" id="repoNameInput" placeholder="example.com" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Application Type</label>
+                            <select class="form-select" name="app_type" id="appTypeSelect">
+                                <option value="nextjs">Next.js Application (npm install, npm run build, pm2 reload)</option>
+                                <option value="docker">Docker Application (docker compose up -d --build)</option>
+                                <option value="domain">PHP / HTML Domain (composer install, permissions, php-fpm)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Target Directory on Server</label>
+                        <input type="text" class="form-control font-monospace" name="target_dir" id="targetDirInput" placeholder="/var/www/example.com" required>
+                        <small class="text-muted">Absolute path where the repository code will be pulled and executed.</small>
+                    </div>
+
+                    <hr class="my-3">
+
+                    <!-- Git Repo Details -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold">Git Repository URL</label>
+                            <input type="text" class="form-control font-monospace" name="repo_url" id="repoUrlInput" 
+                                   placeholder="https://github.com/user/repo.git or git@github.com:user/repo.git" required
+                                   oninput="detectAuthType(this.value)">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Branch</label>
+                            <input type="text" class="form-control font-monospace" name="branch" value="main" required>
+                        </div>
+                    </div>
+
+                    <!-- Auth Type -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold d-block">Repository Access & Authentication</label>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="auth_type" id="authPublic" value="public" checked onchange="toggleAuthFields()">
+                            <label class="form-check-label" for="authPublic">Public Repository (No credentials needed)</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="auth_type" id="authSSH" value="ssh" onchange="toggleAuthFields()">
+                            <label class="form-check-label fw-semibold text-primary" for="authSSH">SSH Deploy Key (Private - Recommended)</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="auth_type" id="authToken" value="token" onchange="toggleAuthFields()">
+                            <label class="form-check-label" for="authToken">Access Token (HTTPS)</label>
+                        </div>
+                    </div>
+
+                    <!-- SSH Notice Box -->
+                    <div id="sshNoticeBox" class="alert alert-info py-2 px-3 small d-none">
+                        <i class="fas fa-info-circle me-1"></i> Lite-cPanel will automatically generate a dedicated ed25519 deploy key for this repository. After connecting, copy the public key to your GitHub/GitLab <strong>Deploy Keys</strong> settings.
+                    </div>
+
+                    <!-- Token Input Box -->
+                    <div id="tokenInputBox" class="mb-3 d-none">
+                        <label class="form-label fw-bold">Personal Access Token / Deploy Token</label>
+                        <input type="password" class="form-control font-monospace" name="auth_token" placeholder="ghp_xxxx or glpat-xxxx">
+                        <small class="text-muted">Token requires read/clone repository permissions.</small>
+                    </div>
+
+                    <hr class="my-3">
+
+                    <!-- Options -->
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" name="auto_deploy" id="autoDeployCheck" value="true" checked>
+                                <label class="form-check-label fw-semibold" for="autoDeployCheck">Enable Auto-Deploy Webhook</label>
+                                <div class="small text-muted">Automatically triggers deployment whenever a push to the branch is received.</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" name="initial_deploy" id="initialDeployCheck" value="true" checked>
+                                <label class="form-check-label fw-semibold" for="initialDeployCheck">Trigger Initial Deploy Now</label>
+                                <div class="small text-muted">Performs the initial clone/pull and build immediately after saving.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Advanced PM2 / Build Command -->
+                    <div class="mt-3">
+                        <a class="text-decoration-none small" data-bs-toggle="collapse" href="#advancedOptions" role="button" aria-expanded="false">
+                            <i class="fas fa-sliders-h me-1"></i> Advanced Build & PM2 Options
+                        </a>
+                        <div class="collapse mt-2" id="advancedOptions">
+                            <div class="card card-body bg-light border-0 p-3">
+                                <div class="row g-2">
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold">Custom Build Command (Optional)</label>
+                                        <input type="text" class="form-control form-control-sm font-monospace" name="build_cmd" placeholder="npm run build">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold">PM2 Process Name (Next.js)</label>
+                                        <input type="text" class="form-control form-control-sm font-monospace" name="pm2_name" id="pm2NameInput" placeholder="example.com">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                
+                <div class="modal-footer border-top bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-link me-1"></i> Connect & Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 2: Live Deployment Logs -->
+<div class="modal fade" id="deployLogsModal" tabindex="-1" aria-labelledby="deployLogsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <div>
+                    <h5 class="modal-title fw-bold" id="deployLogsModalLabel"><i class="fas fa-terminal me-2"></i> Deployment Logs</h5>
+                    <div class="small text-muted" id="logsSubtitle">Repository: Loading...</div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="refreshCurrentLogs()">
+                        <i class="fas fa-sync-alt" id="logRefreshIcon"></i> Refresh
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="modal-body p-3 bg-dark">
+                <div class="terminal-window" id="terminalLogOutput">Loading deployment logs...</div>
+            </div>
+            <div class="modal-footer border-top d-flex justify-content-between align-items-center">
+                <div class="small text-muted">
+                    <span id="logStatusBadge" class="badge bg-secondary me-2">Checking...</span>
+                    <span id="logAutoRefreshText">Auto-refreshing every 2s</span>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 3: Webhook & Deploy Key Setup Modal -->
+<div class="modal fade" id="webhookModal" tabindex="-1" aria-labelledby="webhookModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header border-bottom">
+                <h5 class="modal-title fw-bold" id="webhookModalLabel"><i class="fas fa-key text-primary me-2"></i> Webhook & Deploy Key Setup</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                
+                <!-- Webhook URL Box -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold"><i class="fas fa-link text-success me-1"></i> Webhook Payload URL</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control font-monospace" id="modalWebhookUrl" readonly>
+                        <button class="btn btn-outline-secondary copy-btn" type="button" onclick="copyToClipboard('modalWebhookUrl')">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                    <small class="text-muted">Add this URL to your GitHub/GitLab webhook settings.</small>
+                </div>
+
+                <!-- Webhook Secret Box -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold"><i class="fas fa-shield-alt text-warning me-1"></i> Webhook Secret</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control font-monospace" id="modalWebhookSecret" readonly>
+                        <button class="btn btn-outline-secondary copy-btn" type="button" onclick="copyToClipboard('modalWebhookSecret')">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                    <small class="text-muted">Enter this secret in the Webhook configuration for HMAC verification.</small>
+                </div>
+
+                <!-- SSH Public Key Box (if SSH auth) -->
+                <div id="modalSSHKeySection" class="mb-4 d-none">
+                    <label class="form-label fw-bold"><i class="fas fa-key text-danger me-1"></i> SSH Public Deploy Key (For Private Repos)</label>
+                    <div class="input-group mb-2">
+                        <textarea class="form-control font-monospace small" id="modalPublicKey" rows="3" readonly></textarea>
+                    </div>
+                    <button class="btn btn-sm btn-outline-secondary copy-btn" type="button" onclick="copyToClipboard('modalPublicKey')">
+                        <i class="fas fa-copy me-1"></i> Copy SSH Public Key
+                    </button>
+                    <div class="alert alert-secondary mt-2 py-2 px-3 small">
+                        <strong>GitHub:</strong> Repo Settings &rarr; <em>Deploy Keys</em> &rarr; <em>Add deploy key</em> (Read-only access is sufficient).<br>
+                        <strong>GitLab:</strong> Repo Settings &rarr; <em>Repository</em> &rarr; <em>Deploy Keys</em>.
+                    </div>
+                </div>
+
+                <!-- Quick Setup Instructions Tab -->
+                <div class="card bg-light border-0 p-3">
+                    <h6 class="fw-bold mb-2"><i class="fas fa-book-open text-info me-1"></i> Setup in GitHub or GitLab</h6>
+                    <ol class="small text-muted mb-0 ps-3">
+                        <li class="mb-1">Go to your Repository on <strong>GitHub</strong> or <strong>GitLab</strong>.</li>
+                        <li class="mb-1">Navigate to <strong>Settings</strong> &rarr; <strong>Webhooks</strong> &rarr; <strong>Add Webhook</strong>.</li>
+                        <li class="mb-1">Paste the <strong>Webhook Payload URL</strong> above.</li>
+                        <li class="mb-1">Select <code>application/json</code> as the Content type.</li>
+                        <li class="mb-1">Paste the <strong>Webhook Secret</strong> into the Secret field.</li>
+                        <li>Choose <strong>Just the push event</strong> and save. Lite-cPanel will now auto-deploy on every push!</li>
+                    </ol>
+                </div>
+
+            </div>
+            <div class="modal-footer border-top bg-light">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Repository metadata dictionary passed from Flask
+const REPOS_DATA = {{ repos|tojson }};
+const BASE_WEBHOOK_URL = "{{ webhook_base_url }}";
+
+let currentActiveRepoId = null;
+let logPollInterval = null;
+
+function onTargetSelectChange(selectElem) {
+    const selected = selectElem.options[selectElem.selectedIndex];
+    if (!selected.value || selected.value === 'custom') {
+        return;
+    }
+    const name = selected.getAttribute('data-name');
+    const type = selected.getAttribute('data-type');
+    const dir = selected.getAttribute('data-dir');
+    const pm2 = selected.getAttribute('data-pm2');
+
+    document.getElementById('repoNameInput').value = name;
+    document.getElementById('targetDirInput').value = dir;
+    document.getElementById('appTypeSelect').value = type;
+    if (pm2) {
+        document.getElementById('pm2NameInput').value = pm2;
+    }
+}
+
+function detectAuthType(url) {
+    if (url.startsWith('git@') || url.startsWith('ssh://')) {
+        document.getElementById('authSSH').checked = true;
+    } else if (url.startsWith('https://')) {
+        if (!document.getElementById('authToken').checked) {
+            document.getElementById('authPublic').checked = true;
+        }
+    }
+    toggleAuthFields();
+}
+
+function toggleAuthFields() {
+    const isSSH = document.getElementById('authSSH').checked;
+    const isToken = document.getElementById('authToken').checked;
+
+    document.getElementById('sshNoticeBox').classList.toggle('d-none', !isSSH);
+    document.getElementById('tokenInputBox').classList.toggle('d-none', !isToken);
+}
+
+function viewDeployLogs(repoId, repoName) {
+    currentActiveRepoId = repoId;
+    document.getElementById('logsSubtitle').innerText = `Repository: ${repoName} (${repoId})`;
+    document.getElementById('terminalLogOutput').innerText = 'Fetching latest deployment logs...';
+
+    const logsModal = new bootstrap.Modal(document.getElementById('deployLogsModal'));
+    logsModal.show();
+
+    fetchLogs();
+
+    // Start auto polling if building
+    if (logPollInterval) clearInterval(logPollInterval);
+    logPollInterval = setInterval(fetchLogs, 2000);
+}
+
+document.getElementById('deployLogsModal').addEventListener('hidden.bs.modal', function () {
+    if (logPollInterval) {
+        clearInterval(logPollInterval);
+        logPollInterval = null;
+    }
+});
+
+function fetchLogs() {
+    if (!currentActiveRepoId) return;
+    const icon = document.getElementById('logRefreshIcon');
+    icon.classList.add('fa-spin');
+
+    fetch(`/cicd/logs/${currentActiveRepoId}`)
+        .then(res => res.json())
+        .then(data => {
+            icon.classList.remove('fa-spin');
+            const term = document.getElementById('terminalLogOutput');
+            term.innerText = data.logs || 'No logs recorded yet.';
+            term.scrollTop = term.scrollHeight;
+
+            const badge = document.getElementById('logStatusBadge');
+            badge.innerText = data.status.toUpperCase();
+            if (data.status === 'building') {
+                badge.className = 'badge badge-building me-2';
+                document.getElementById('logAutoRefreshText').innerText = 'Auto-refreshing every 2s...';
+            } else if (data.status === 'success') {
+                badge.className = 'badge bg-success me-2';
+                document.getElementById('logAutoRefreshText').innerText = 'Completed';
+                if (logPollInterval) clearInterval(logPollInterval);
+            } else if (data.status === 'failed') {
+                badge.className = 'badge bg-danger me-2';
+                document.getElementById('logAutoRefreshText').innerText = 'Failed';
+                if (logPollInterval) clearInterval(logPollInterval);
+            } else {
+                badge.className = 'badge bg-secondary me-2';
+                if (logPollInterval) clearInterval(logPollInterval);
+            }
+        })
+        .catch(err => {
+            icon.classList.remove('fa-spin');
+        });
+}
+
+function refreshCurrentLogs() {
+    fetchLogs();
+}
+
+function showWebhookModal(repoId) {
+    const repo = REPOS_DATA[repoId];
+    if (!repo) return;
+
+    const fullWebhookUrl = `${BASE_WEBHOOK_URL}${repo.webhook_token}`;
+    document.getElementById('modalWebhookUrl').value = fullWebhookUrl;
+    document.getElementById('modalWebhookSecret').value = repo.webhook_secret || '';
+
+    const sshSection = document.getElementById('modalSSHKeySection');
+    if (repo.auth_type === 'ssh' && repo.public_key) {
+        sshSection.classList.remove('d-none');
+        document.getElementById('modalPublicKey').value = repo.public_key;
+    } else {
+        sshSection.classList.add('d-none');
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
+    modal.show();
+}
+
+function copyToClipboard(elementId) {
+    const input = document.getElementById(elementId);
+    input.select();
+    input.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(input.value).then(() => {
+        alert("Copied to clipboard!");
+    });
+}
+</script>
+{% endblock %}
