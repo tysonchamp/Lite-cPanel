@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python" />
-  <img src="https://img.shields.io/badge/Flask-2.x-lightgrey?logo=flask" />
+  <img src="https://img.shields.io/badge/Python-3.10%20--%203.13%2B-blue?logo=python" />
+  <img src="https://img.shields.io/badge/Flask-3.x-lightgrey?logo=flask" />
   <img src="https://img.shields.io/badge/Ubuntu-24.04%2B-orange?logo=ubuntu" />
   <img src="https://img.shields.io/badge/License-GPL--3.0-green" />
   <img src="https://img.shields.io/badge/Status-Active-brightgreen" />
@@ -126,6 +126,15 @@ It bundles a full automated LAMP/LEMP stack installer alongside a browser-based 
 - **Docker Compose Integration** — Upload a `docker-compose.yml` to the document root and trigger a background build & run (`docker compose up -d --build`) directly from the panel with one click
 - **Logs Tracking** — Background compose builds pipe their output seamlessly to `/var/log/docker_compose_{domain}.log`
 
+### 🔄 Git CI/CD & Auto-Deploy (Vercel-like)
+- **Push-to-Deploy Webhooks** — Automatic deployments triggered by Git pushes from GitHub, GitLab, and custom Git providers
+- **Multi-Stack Support** — Auto-builds and reloads Next.js apps (via PM2), Docker containers (via Docker Compose), and traditional PHP/HTML domains
+- **Public & Private Repositories** — Built-in automated ed25519 SSH Deploy Key generation with 1-click copy for GitHub/GitLab, plus Personal Access Token (PAT) authentication for HTTPS
+- **Cryptographic Verification** — HMAC-SHA256 signature verification (`X-Hub-Signature-256`, `X-Gitlab-Token`) and branch filtering
+- **Live Build Logs** — Stream real-time deployment logs in a sleek dark terminal modal with 2s polling
+- **1-Click Manual Deploy** — Inline "Git Pull / Redeploy" buttons across Domains, Next.js, and Docker pages
+
+
 ### 🌐 Domain & SSL Manager
 - **Smart SSL Generation** — Automatically detects which webserver (Apache/Nginx) is serving port 80 to choose the correct Certbot plugin
 - **DNS Verification** — Automatically verifies DNS resolution for the `www` subdomain before including it in the SSL request, preventing validation failures
@@ -191,7 +200,7 @@ It bundles a full automated LAMP/LEMP stack installer alongside a browser-based 
 | **Debian** | 12 (Bookworm) | ⚠️ Mostly Compatible |
 | Other Linux | Any | ❌ Not Tested |
 
-> **Note:** The automated stack installer (`install.sh`) is written specifically for Ubuntu/Debian `apt`-based systems. The panel itself (Flask app) will run on any Linux distribution with Python 3.10+.
+> **Note:** The automated stack installer (`install.sh`) is written specifically for Ubuntu/Debian `apt`-based systems. The panel itself (Flask app) will run on any Linux distribution with Python 3.10+ (tested on Python 3.10 through 3.13+).
 
 ---
 

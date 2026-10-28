@@ -104,6 +104,11 @@
                                             <input type="hidden" name="action" value="ssl_generate">
                                             <button type="submit" class="btn btn-sm btn-outline-primary" title="Generate SSL"><i class="fas fa-shield-alt"></i></button>
                                             {% endif %}
+                                        <!-- Git Pull Action -->
+                                        <form method="POST" action="{{ url_for('cicd_quick_pull') }}" class="mb-0">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="domain" value="{{ vhost.domain }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Git Pull / Deploy"><i class="fab fa-git-alt text-danger"></i></button>
                                         </form>
 
                                         <!-- Delete Action -->

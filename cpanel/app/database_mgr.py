@@ -2,7 +2,7 @@ import pymysql
 import os
 import secrets
 import subprocess
-import crypt
+
 
 SYSTEM_USERS = (
     'root',
