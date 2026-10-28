@@ -513,19 +513,25 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
             _append_log(log_file, "✅ PM2 process reloaded.")
 
         elif app_type in ['domain', 'php']:
-            _append_log(log_file, "Reloading PHP-FPM service to clear OPCache...")
-            # Try reloading common PHP-FPM service names
+            _append_log(log_file, "Detecting PHP-FPM service to clear OPCache...")
+            res = subprocess.run("systemctl list-units --type=service --all | grep -m1 -oE 'php[0-9.]+-fpm\\.service'", shell=True, capture_output=True, text=True)
+            php_fpm_id = res.stdout.strip().replace('.service', '') or 'php-fpm'
+
             reloaded = False
-            for ver in ['8.3', '8.2', '8.1', '8.0', '7.4']:
-                srv = f"php{ver}-fpm"
-                check = subprocess.run(['systemctl', 'is-active', '--quiet', srv], capture_output=True)
-                if check.returncode == 0:
-                    subprocess.run(['systemctl', 'reload', srv], capture_output=True)
-                    _append_log(log_file, f"Reloaded {srv}.")
+            # Attempt reload to clear OPCache without downtime, fallback to restart
+            res = subprocess.run(['systemctl', 'reload', php_fpm_id], capture_output=True, text=True)
+            if res.returncode == 0:
+                _append_log(log_file, f"Reloaded {php_fpm_id}.")
+                reloaded = True
+            else:
+                res = subprocess.run(['systemctl', 'restart', php_fpm_id], capture_output=True, text=True)
+                if res.returncode == 0:
+                    _append_log(log_file, f"Restarted {php_fpm_id}.")
                     reloaded = True
-                    break
+
             if not reloaded:
                 # Fallback to reloading apache or nginx
+                _append_log(log_file, "Falling back to reloading webserver...")
                 subprocess.run(['systemctl', 'reload', 'apache2'], capture_output=True)
                 subprocess.run(['systemctl', 'reload', 'nginx'], capture_output=True)
                 _append_log(log_file, "Reloaded webserver.")
