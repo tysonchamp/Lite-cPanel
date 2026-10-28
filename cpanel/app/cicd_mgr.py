@@ -201,6 +201,11 @@ def _append_log(log_file, message):
     except Exception:
         pass
 
+def _run_git_cmd(args, env=None, cwd=None):
+    """Executes a git command with safe.directory configured to avoid dubious ownership errors."""
+    cmd = ['git', '-c', 'safe.directory=*'] + args
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
+
 def run_deployment_pipeline(repo_id, triggered_by='manual'):
     """
     Executes the complete deployment pipeline for a repository:
@@ -257,6 +262,20 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
         # --- STEP 1: Git Clone or Pull ---
         _append_log(log_file, f"--- [1/3] Updating Git Source Code ---")
         os.makedirs(target_dir, exist_ok=True)
+
+        # Configure safe.directory so git allows operations across differing user ownership (e.g. root vs www-data)
+        try:
+            check = _run_git_cmd(['config', '--global', '--get-all', 'safe.directory'], env=env)
+            existing_safe = [line.strip() for line in (check.stdout or '').splitlines() if line.strip()]
+            if '*' not in existing_safe:
+                _run_git_cmd(['config', '--global', '--add', 'safe.directory', '*'], env=env)
+            if target_dir not in existing_safe:
+                _run_git_cmd(['config', '--global', '--add', 'safe.directory', target_dir], env=env)
+            if os.geteuid() == 0:
+                _run_git_cmd(['config', '--system', '--add', 'safe.directory', '*'], env=env)
+        except Exception:
+            pass
+
         git_dir = os.path.join(target_dir, '.git')
 
         if not os.path.exists(git_dir):
@@ -264,9 +283,9 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
             dir_contents = [f for f in os.listdir(target_dir) if f not in ['.git', '.keep', 'index.html', 'default.html']]
             if len(dir_contents) == 0:
                 _append_log(log_file, f"Target directory is empty. Running initial git clone from {repo_url} (branch: {branch})...")
-                res = subprocess.run(
-                    ['git', 'clone', '--branch', branch, effective_url, target_dir],
-                    capture_output=True, text=True, env=env
+                res = _run_git_cmd(
+                    ['clone', '--branch', branch, effective_url, target_dir],
+                    env=env
                 )
                 _append_log(log_file, res.stdout)
                 if res.returncode != 0:
@@ -274,29 +293,29 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
                     raise Exception(f"Git clone error: {res.stderr.strip()}")
             else:
                 _append_log(log_file, f"Directory contains existing files. Initializing Git repository...")
-                subprocess.run(['git', 'init', target_dir], check=True, capture_output=True, text=True, env=env)
-                subprocess.run(['git', '-C', target_dir, 'remote', 'remove', 'origin'], capture_output=True, text=True, env=env)
-                subprocess.run(['git', '-C', target_dir, 'remote', 'add', 'origin', effective_url], check=True, capture_output=True, text=True, env=env)
-                res = subprocess.run(['git', '-C', target_dir, 'fetch', 'origin', branch], capture_output=True, text=True, env=env)
+                _run_git_cmd(['init', target_dir], env=env)
+                _run_git_cmd(['-C', target_dir, 'remote', 'remove', 'origin'], env=env)
+                _run_git_cmd(['-C', target_dir, 'remote', 'add', 'origin', effective_url], env=env)
+                res = _run_git_cmd(['-C', target_dir, 'fetch', 'origin', branch], env=env)
                 _append_log(log_file, res.stdout)
                 if res.returncode != 0:
                     _append_log(log_file, f"Git fetch failed: {res.stderr}")
                     raise Exception(f"Git fetch error: {res.stderr.strip()}")
-                res = subprocess.run(['git', '-C', target_dir, 'checkout', '-B', branch, f'origin/{branch}', '-f'], capture_output=True, text=True, env=env)
+                res = _run_git_cmd(['-C', target_dir, 'checkout', '-B', branch, f'origin/{branch}', '-f'], env=env)
                 _append_log(log_file, res.stdout)
         else:
             _append_log(log_file, f"Fetching latest commits on branch '{branch}'...")
             # Update remote URL if changed
-            subprocess.run(['git', '-C', target_dir, 'remote', 'set-url', 'origin', effective_url], capture_output=True, text=True, env=env)
-            res = subprocess.run(['git', '-C', target_dir, 'fetch', 'origin', branch], capture_output=True, text=True, env=env)
+            _run_git_cmd(['-C', target_dir, 'remote', 'set-url', 'origin', effective_url], env=env)
+            res = _run_git_cmd(['-C', target_dir, 'fetch', 'origin', branch], env=env)
             _append_log(log_file, res.stdout)
             if res.returncode != 0:
                 _append_log(log_file, f"Git fetch error: {res.stderr}")
                 raise Exception(f"Git fetch error: {res.stderr.strip()}")
 
             # Checkout and pull
-            subprocess.run(['git', '-C', target_dir, 'checkout', branch], capture_output=True, text=True, env=env)
-            res = subprocess.run(['git', '-C', target_dir, 'pull', 'origin', branch], capture_output=True, text=True, env=env)
+            _run_git_cmd(['-C', target_dir, 'checkout', branch], env=env)
+            res = _run_git_cmd(['-C', target_dir, 'pull', 'origin', branch], env=env)
             _append_log(log_file, res.stdout)
             if res.returncode != 0:
                 _append_log(log_file, f"Git pull error: {res.stderr}")
@@ -418,9 +437,9 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
         # --- STEP 4: Fetch Latest Commit Metadata ---
         commit_info = {}
         try:
-            res = subprocess.run(
-                ['git', '-C', target_dir, 'log', '-1', '--format=%h|%an|%ad|%s', '--date=short'],
-                capture_output=True, text=True, env=env
+            res = _run_git_cmd(
+                ['-C', target_dir, 'log', '-1', '--format=%h|%an|%ad|%s', '--date=short'],
+                env=env
             )
             if res.returncode == 0 and res.stdout.strip():
                 parts = res.stdout.strip().split('|')
