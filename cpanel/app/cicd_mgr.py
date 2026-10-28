@@ -333,16 +333,18 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
                     _append_log(log_file, "💡 Hint: For private repositories, configure an SSH Deploy Key or Personal Access Token in the Setup modal.")
                 raise Exception(f"Git fetch error: {res.stderr.strip()}")
 
-            # Checkout and pull
-            res = _run_git_cmd(['-C', target_dir, 'checkout', branch], env=env)
-            if res.returncode != 0:
-                _run_git_cmd(['-C', target_dir, 'checkout', '-B', branch, f'origin/{branch}'], env=env)
-
-            res = _run_git_cmd(['-C', target_dir, 'pull', 'origin', branch], env=env)
+            # Sync working tree with origin/branch (avoids conflicts with pre-existing untracked files)
+            _append_log(log_file, f"Synchronizing working tree with 'origin/{branch}'...")
+            res = _run_git_cmd(['-C', target_dir, 'checkout', '-f', '-B', branch, f'origin/{branch}'], env=env)
             _append_log(log_file, res.stdout)
             if res.returncode != 0:
-                _append_log(log_file, f"Git pull error: {res.stderr}")
-                raise Exception(f"Git pull error: {res.stderr.strip()}")
+                _append_log(log_file, f"Checkout warning: {res.stderr}")
+
+            res = _run_git_cmd(['-C', target_dir, 'reset', '--hard', f'origin/{branch}'], env=env)
+            _append_log(log_file, res.stdout)
+            if res.returncode != 0:
+                _append_log(log_file, f"Git reset error: {res.stderr}")
+                raise Exception(f"Git reset error: {res.stderr.strip()}")
 
         _append_log(log_file, "✅ Git pull completed successfully.\n")
 
