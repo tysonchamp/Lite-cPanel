@@ -89,7 +89,7 @@
         <div class="card shadow-sm border-0">
             <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
                 <div>
-                    <h5 class="mb-1 fw-bold"><i class="fab fa-git-alt text-danger me-2"></i> Continuous Deployment (Vercel-like)</h5>
+                    <h5 class="mb-1 fw-bold"><i class="fab fa-git-alt text-danger me-2"></i> Continuous Deployment</h5>
                     <p class="text-muted small mb-0">Push to your GitHub or GitLab repository to automatically pull, build, and reload your Next.js apps, Docker containers, or traditional PHP domains.</p>
                 </div>
                 <div>
@@ -431,7 +431,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header border-bottom">
-                <h5 class="modal-title fw-bold" id="webhookModalLabel"><i class="fas fa-key text-primary me-2"></i> Webhook & Deploy Key Setup</h5>
+                <h5 class="modal-title fw-bold" id="webhookModalLabel"><i class="fas fa-sliders-h text-primary me-2"></i> Webhook & Credentials Setup</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
@@ -445,45 +445,82 @@
                             <i class="fas fa-copy"></i> Copy
                         </button>
                     </div>
-                    <small class="text-muted">Add this URL to your GitHub/GitLab webhook settings.</small>
+                    <small class="text-muted">Paste this URL into your GitHub/GitLab webhook settings.</small>
                 </div>
 
-                <!-- Webhook Secret Box -->
-                <div class="mb-4">
-                    <label class="form-label fw-bold"><i class="fas fa-shield-alt text-warning me-1"></i> Webhook Secret</label>
-                    <form method="POST" action="{{ url_for('cicd_route') }}" class="mb-0">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="action" value="update_secret">
-                        <input type="hidden" name="repo_id" id="modalSecretRepoId">
-                        <div class="input-group">
-                            <input type="text" class="form-control font-monospace" name="webhook_secret" id="modalWebhookSecret" placeholder="Optional secret...">
-                            <button class="btn btn-outline-secondary copy-btn" type="button" onclick="copyToClipboard('modalWebhookSecret')" title="Copy Secret">
-                                <i class="fas fa-copy"></i> Copy
-                            </button>
-                            <button class="btn btn-primary" type="submit" title="Save / Update Secret">
-                                <i class="fas fa-save"></i> Save
-                            </button>
+                <hr class="my-3">
+
+                <!-- Repository Settings & Credentials Form -->
+                <form method="POST" action="{{ url_for('cicd_route') }}" class="mb-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="update_settings">
+                    <input type="hidden" name="repo_id" id="modalSettingsRepoId">
+
+                    <h6 class="fw-bold mb-3"><i class="fas fa-lock text-warning me-1"></i> Repository Settings & Credentials</h6>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold small">Git Repository URL</label>
+                            <input type="text" class="form-control font-monospace" name="repo_url" id="editRepoUrl" required>
                         </div>
-                    </form>
-                    <small class="text-muted d-block mt-1">
-                        Must match the <strong>Secret</strong> field in GitHub exactly. If you changed the Secret in GitHub, paste it here and click Save. Or leave it blank in both GitHub and Lite-cPanel to disable secret verification.
-                    </small>
-                </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold small">Branch</label>
+                            <input type="text" class="form-control font-monospace" name="branch" id="editBranch" required>
+                        </div>
+                    </div>
 
-                <!-- SSH Public Key Box (if SSH auth) -->
-                <div id="modalSSHKeySection" class="mb-4 d-none">
-                    <label class="form-label fw-bold"><i class="fas fa-key text-danger me-1"></i> SSH Public Deploy Key (For Private Repos)</label>
-                    <div class="input-group mb-2">
-                        <textarea class="form-control font-monospace small" id="modalPublicKey" rows="3" readonly></textarea>
+                    <!-- Auth Method Selector -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small d-block">Authentication Method</label>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="auth_type" id="editAuthPublic" value="public" onchange="toggleEditAuthFields()">
+                            <label class="form-check-label small" for="editAuthPublic">Public Repo</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="auth_type" id="editAuthSSH" value="ssh" onchange="toggleEditAuthFields()">
+                            <label class="form-check-label small fw-semibold text-primary" for="editAuthSSH">SSH Deploy Key (Private - Recommended)</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="auth_type" id="editAuthToken" value="token" onchange="toggleEditAuthFields()">
+                            <label class="form-check-label small" for="editAuthToken">Personal Access Token (HTTPS)</label>
+                        </div>
                     </div>
-                    <button class="btn btn-sm btn-outline-secondary copy-btn" type="button" onclick="copyToClipboard('modalPublicKey')">
-                        <i class="fas fa-copy me-1"></i> Copy SSH Public Key
-                    </button>
-                    <div class="alert alert-secondary mt-2 py-2 px-3 small">
-                        <strong>GitHub:</strong> Repo Settings &rarr; <em>Deploy Keys</em> &rarr; <em>Add deploy key</em> (Read-only access is sufficient).<br>
-                        <strong>GitLab:</strong> Repo Settings &rarr; <em>Repository</em> &rarr; <em>Deploy Keys</em>.
+
+                    <!-- Token Input Box -->
+                    <div id="editTokenInputBox" class="mb-3 d-none">
+                        <label class="form-label fw-bold small">GitHub / GitLab Personal Access Token</label>
+                        <input type="password" class="form-control font-monospace" name="auth_token" id="editTokenInput" placeholder="ghp_xxxx or glpat-xxxx">
+                        <small class="text-muted">Requires repository read/clone permission.</small>
                     </div>
-                </div>
+
+                    <!-- SSH Public Key Box -->
+                    <div id="editModalSSHKeySection" class="mb-3 d-none">
+                        <label class="form-label fw-bold small"><i class="fas fa-key text-danger me-1"></i> SSH Public Deploy Key</label>
+                        <div class="input-group mb-2">
+                            <textarea class="form-control font-monospace small" id="editModalPublicKey" rows="3" readonly placeholder="Key will be generated upon saving..."></textarea>
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary copy-btn" type="button" onclick="copyToClipboard('editModalPublicKey')">
+                            <i class="fas fa-copy me-1"></i> Copy SSH Public Key
+                        </button>
+                        <div class="alert alert-secondary mt-2 py-2 px-3 small">
+                            <strong>GitHub:</strong> Go to Repository Settings &rarr; <em>Deploy Keys</em> &rarr; <em>Add deploy key</em>.<br>
+                            <strong>GitLab:</strong> Repository Settings &rarr; <em>Repository</em> &rarr; <em>Deploy Keys</em>.
+                        </div>
+                    </div>
+
+                    <!-- Webhook Secret Box -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small"><i class="fas fa-shield-alt text-warning me-1"></i> Webhook Secret</label>
+                        <input type="text" class="form-control font-monospace" name="webhook_secret" id="editWebhookSecret" placeholder="Optional secret...">
+                        <small class="text-muted d-block mt-1">Must match the Secret configured in your GitHub/GitLab webhook settings, or leave blank to disable secret verification.</small>
+                    </div>
+
+                    <div class="d-flex justify-content-end mb-4">
+                        <button class="btn btn-primary btn-sm" type="submit">
+                            <i class="fas fa-save me-1"></i> Save Repository Settings
+                        </button>
+                    </div>
+                </form>
 
                 <!-- Quick Setup Instructions Tab -->
                 <div class="card bg-light border-0 p-3">
@@ -493,7 +530,7 @@
                         <li class="mb-1">Navigate to <strong>Settings</strong> &rarr; <strong>Webhooks</strong> &rarr; <strong>Add Webhook</strong>.</li>
                         <li class="mb-1">Paste the <strong>Webhook Payload URL</strong> above.</li>
                         <li class="mb-1">Select <code>application/json</code> as the Content type.</li>
-                        <li class="mb-1">Paste the <strong>Webhook Secret</strong> into the Secret field.</li>
+                        <li class="mb-1">Paste your <strong>Webhook Secret</strong> (if configured).</li>
                         <li>Choose <strong>Just the push event</strong> and save. Lite-cPanel will now auto-deploy on every push!</li>
                     </ol>
                 </div>
@@ -618,20 +655,36 @@ function showWebhookModal(repoId) {
     if (!repo) return;
 
     const fullWebhookUrl = `${BASE_WEBHOOK_URL}${repo.webhook_token}`;
-    document.getElementById('modalSecretRepoId').value = repoId;
+    document.getElementById('modalSettingsRepoId').value = repoId;
     document.getElementById('modalWebhookUrl').value = fullWebhookUrl;
-    document.getElementById('modalWebhookSecret').value = repo.webhook_secret || '';
+    document.getElementById('editRepoUrl').value = repo.repo_url || '';
+    document.getElementById('editBranch').value = repo.branch || 'main';
+    document.getElementById('editWebhookSecret').value = repo.webhook_secret || '';
 
-    const sshSection = document.getElementById('modalSSHKeySection');
-    if (repo.auth_type === 'ssh' && repo.public_key) {
-        sshSection.classList.remove('d-none');
-        document.getElementById('modalPublicKey').value = repo.public_key;
+    const authType = repo.auth_type || 'public';
+    if (authType === 'ssh') {
+        document.getElementById('editAuthSSH').checked = true;
+    } else if (authType === 'token') {
+        document.getElementById('editAuthToken').checked = true;
     } else {
-        sshSection.classList.add('d-none');
+        document.getElementById('editAuthPublic').checked = true;
     }
+
+    document.getElementById('editTokenInput').value = repo.auth_token || '';
+    document.getElementById('editModalPublicKey').value = repo.public_key || '';
+
+    toggleEditAuthFields();
 
     const modal = new bootstrap.Modal(document.getElementById('webhookModal'));
     modal.show();
+}
+
+function toggleEditAuthFields() {
+    const isSSH = document.getElementById('editAuthSSH').checked;
+    const isToken = document.getElementById('editAuthToken').checked;
+
+    document.getElementById('editModalSSHKeySection').classList.toggle('d-none', !isSSH);
+    document.getElementById('editTokenInputBox').classList.toggle('d-none', !isToken);
 }
 
 function copyToClipboard(elementId) {

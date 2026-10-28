@@ -2129,6 +2129,38 @@ def cicd_route():
             flash("Webhook secret updated successfully!", "success")
             return redirect(url_for('cicd_route'))
 
+        elif action == 'update_settings':
+            repo_id = request.form.get('repo_id')
+            repo = get_cicd_repo(repo_id)
+            if not repo:
+                flash("Repository not found.", "danger")
+                return redirect(url_for('cicd_route'))
+
+            new_url = request.form.get('repo_url', '').strip()
+            new_branch = request.form.get('branch', '').strip()
+            auth_type = request.form.get('auth_type', 'public')
+            auth_token = request.form.get('auth_token', '').strip()
+            webhook_secret = request.form.get('webhook_secret', '').strip()
+
+            if new_url:
+                repo['repo_url'] = new_url
+            if new_branch:
+                repo['branch'] = new_branch
+            repo['auth_type'] = auth_type
+            if auth_type == 'token':
+                if auth_token:
+                    repo['auth_token'] = auth_token
+            elif auth_type == 'ssh':
+                if not repo.get('deploy_key_path') or not repo.get('public_key'):
+                    key_path, pub_key = generate_deploy_key(repo_id)
+                    repo['deploy_key_path'] = key_path
+                    repo['public_key'] = pub_key
+
+            repo['webhook_secret'] = webhook_secret
+            save_cicd_repo(repo)
+            flash(f"Settings and credentials for '{repo.get('name')}' updated successfully!", "success")
+            return redirect(url_for('cicd_route'))
+
         elif action == 'deploy':
             repo_id = request.form.get('repo_id')
             repo = get_cicd_repo(repo_id)

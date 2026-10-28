@@ -170,13 +170,19 @@ def get_git_environment(repo):
                     break
 
     env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
+    env["GIT_TERMINAL_PROMPT"] = "0"
     
     # If SSH deploy key is configured
-    if repo.get('auth_type') == 'ssh' and repo.get('deploy_key_path'):
+    if repo.get('auth_type') == 'ssh':
         key_path = repo.get('deploy_key_path')
-        if os.path.exists(key_path):
-            # StrictHostKeyChecking=accept-new avoids blocking on first clone
-            env['GIT_SSH_COMMAND'] = f"ssh -i {key_path} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+        if not key_path or not os.path.exists(key_path):
+            key_path, pub_key = generate_deploy_key(repo.get('repo_id', 'default'))
+            if key_path:
+                repo['deploy_key_path'] = key_path
+                repo['public_key'] = pub_key
+                save_cicd_repo(repo)
+        if key_path and os.path.exists(key_path):
+            env['GIT_SSH_COMMAND'] = f"ssh -i {key_path} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
     return env
 
@@ -256,8 +262,14 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
         effective_url = repo_url
         if auth_type == 'token' and repo.get('auth_token') and repo_url.startswith('https://'):
             token = repo.get('auth_token').strip()
-            # Insert token: https://<token>@github.com/...
+            # Insert token: https://x-access-token:<token>@github.com/...
             effective_url = re.sub(r'^https://', f'https://x-access-token:{token}@', repo_url)
+        elif auth_type == 'ssh' and repo_url.startswith('https://'):
+            # Convert https://github.com/owner/repo(.git) -> git@github.com:owner/repo.git
+            m = re.match(r'^https?://([^/]+)/(.+?)(?:\.git)?$', repo_url)
+            if m:
+                host, path = m.group(1), m.group(2)
+                effective_url = f"git@{host}:{path}.git"
 
         # --- STEP 1: Git Clone or Pull ---
         _append_log(log_file, f"--- [1/3] Updating Git Source Code ---")
@@ -305,16 +317,27 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
                 _append_log(log_file, res.stdout)
         else:
             _append_log(log_file, f"Fetching latest commits on branch '{branch}'...")
-            # Update remote URL if changed
-            _run_git_cmd(['-C', target_dir, 'remote', 'set-url', 'origin', effective_url], env=env)
+            # Ensure remote 'origin' exists and has the correct URL
+            remotes = _run_git_cmd(['-C', target_dir, 'remote'], env=env).stdout.split()
+            if 'origin' in remotes:
+                _run_git_cmd(['-C', target_dir, 'remote', 'set-url', 'origin', effective_url], env=env)
+            else:
+                _run_git_cmd(['-C', target_dir, 'remote', 'add', 'origin', effective_url], env=env)
+
             res = _run_git_cmd(['-C', target_dir, 'fetch', 'origin', branch], env=env)
             _append_log(log_file, res.stdout)
             if res.returncode != 0:
                 _append_log(log_file, f"Git fetch error: {res.stderr}")
+                err_lower = res.stderr.lower()
+                if 'could not read' in err_lower or 'not found' in err_lower or 'access rights' in err_lower or 'terminal prompts' in err_lower:
+                    _append_log(log_file, "💡 Hint: For private repositories, configure an SSH Deploy Key or Personal Access Token in the Setup modal.")
                 raise Exception(f"Git fetch error: {res.stderr.strip()}")
 
             # Checkout and pull
-            _run_git_cmd(['-C', target_dir, 'checkout', branch], env=env)
+            res = _run_git_cmd(['-C', target_dir, 'checkout', branch], env=env)
+            if res.returncode != 0:
+                _run_git_cmd(['-C', target_dir, 'checkout', '-B', branch, f'origin/{branch}'], env=env)
+
             res = _run_git_cmd(['-C', target_dir, 'pull', 'origin', branch], env=env)
             _append_log(log_file, res.stdout)
             if res.returncode != 0:
