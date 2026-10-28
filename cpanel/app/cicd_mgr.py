@@ -8,6 +8,8 @@ import shutil
 import logging
 import threading
 import subprocess
+import pwd
+import grp
 from datetime import datetime
 
 # Setup paths
@@ -212,6 +214,78 @@ def _run_git_cmd(args, env=None, cwd=None):
     cmd = ['git', '-c', 'safe.directory=*'] + args
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
 
+def detect_target_owner(target_dir):
+    """
+    Detects the appropriate user and group for target_dir.
+    1. Checks if an FTP/SFTP user is configured for this directory in Lite-cPanel.
+    2. Inspects target_dir or closest existing parent directory for non-root owner.
+    3. Falls back to 'www-data:www-data' if owned by root.
+    """
+    abs_target = os.path.abspath(target_dir)
+
+    # 1. Match against configured FTP users in Lite-cPanel
+    try:
+        from ftp_mgr import get_ftp_users
+        ftp_users = get_ftp_users()
+        # Sort users by directory length descending so deepest match wins
+        sorted_users = sorted(ftp_users, key=lambda x: len(x.get('directory', '')), reverse=True)
+        for u in sorted_users:
+            u_dir = os.path.abspath(u.get('directory', ''))
+            if u_dir and (abs_target == u_dir or abs_target.startswith(u_dir.rstrip('/') + '/')):
+                username = u.get('username')
+                try:
+                    user_info = pwd.getpwnam(username)
+                    group_name = grp.getgrgid(user_info.pw_gid).gr_name
+                    return username, group_name
+                except KeyError:
+                    pass
+    except Exception:
+        pass
+
+    # 2. Inspect target_dir or nearest existing parent on the filesystem
+    curr = abs_target
+    while curr and curr != '/' and not os.path.exists(curr):
+        curr = os.path.dirname(curr)
+
+    if os.path.exists(curr):
+        try:
+            st = os.stat(curr)
+            if st.st_uid != 0:
+                user = pwd.getpwuid(st.st_uid).pw_name
+                group = grp.getgrgid(st.st_gid).gr_name
+                return user, group
+        except Exception:
+            pass
+
+    return 'www-data', 'www-data'
+
+def fix_target_permissions(target_dir, log_file=None):
+    """
+    Ensures the target directory has proper ownership and permissions matching Lite-cPanel's FTP/SFTP model:
+    - Owned by the detected domain/FTP user:group (or www-data:www-data).
+    - Directories: 02770 (rwxrws---) with SetGID bit so new files inherit group.
+    - Files: 0660 (rw-rw----) or 0770 for executables.
+    """
+    if os.geteuid() != 0:
+        return
+
+    user, group = detect_target_owner(target_dir)
+    if log_file:
+        _append_log(log_file, f"Syncing file ownership & permissions ({user}:{group}, 770/660 SGID)...")
+
+    try:
+        # 1. Chown all files and folders recursively
+        subprocess.run(['chown', '-R', f'{user}:{group}', target_dir], check=True, capture_output=True)
+
+        # 2. Set permissions: u+rwX,g+rwX,o-rwx (660 for regular files, 770 for executables & dirs)
+        subprocess.run(['chmod', '-R', 'u+rwX,g+rwX,o-rwx', target_dir], check=True, capture_output=True)
+
+        # 3. Ensure SetGID on all directories so any newly created files inherit the group
+        subprocess.run(['find', target_dir, '-type', 'd', '-exec', 'chmod', 'g+s', '{}', '+'], check=True, capture_output=True)
+    except Exception as e:
+        if log_file:
+            _append_log(log_file, f"Warning syncing permissions: {e}")
+
 def run_deployment_pipeline(repo_id, triggered_by='manual'):
     """
     Executes the complete deployment pipeline for a repository:
@@ -347,6 +421,8 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
                 raise Exception(f"Git reset error: {res.stderr.strip()}")
 
         _append_log(log_file, "✅ Git pull completed successfully.\n")
+        # Align ownership and permissions after source code update
+        fix_target_permissions(target_dir, log_file=log_file)
 
         # --- STEP 2: Application Build / Dependencies ---
         _append_log(log_file, f"--- [2/3] Running Build & Dependencies ({app_type.upper()}) ---")
@@ -407,14 +483,6 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
                 if res.returncode != 0:
                     _append_log(log_file, f"Composer warning: {res.stderr}")
 
-            # Ensure proper www-data file ownership and permissions if running as root
-            if os.geteuid() == 0:
-                _append_log(log_file, "Fixing web file permissions (chown www-data:www-data)...")
-                try:
-                    subprocess.run(['chown', '-R', 'www-data:www-data', target_dir], check=True, capture_output=True)
-                except Exception as e:
-                    _append_log(log_file, f"Warning setting permissions: {e}")
-
         # Custom post-deploy script if configured
         post_deploy = repo.get('post_deploy_cmd')
         if post_deploy:
@@ -423,6 +491,9 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
             _append_log(log_file, res.stdout)
             if res.returncode != 0:
                 _append_log(log_file, f"Post-deploy warning: {res.stderr}")
+
+        # Enforce target directory ownership & permissions across all files and newly generated build artifacts
+        fix_target_permissions(target_dir, log_file=log_file)
 
         _append_log(log_file, "✅ Build step completed.\n")
 

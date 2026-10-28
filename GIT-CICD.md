@@ -35,6 +35,7 @@ flowchart LR
 2. **Push-to-Deploy**: Every connected repository receives a unique Webhook URL and HMAC-SHA256 Secret.
 3. **Live Terminal Output**: Build steps stream output in real-time to a sleek dark terminal modal with 2-second auto-polling.
 4. **1-Click Manual Deploy**: Quick-redeploy buttons are accessible right from the Domains, Next.js, and Docker dashboard tables.
+5. **Automated FTP & Web Permissions Alignment**: Automatically detects the domain or FTP/SFTP user (e.g. `vaiska:vaiska` or `www-data:www-data`) and aligns all deployed and built files to `0660` / `0770` with `SetGID (g+s)`. This ensures both the FTP user and the web server (`www-data`) have full read/write access to all project files.
 
 ---
 
