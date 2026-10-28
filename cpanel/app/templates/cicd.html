@@ -380,6 +380,11 @@
                                         <label class="form-label small fw-bold">PM2 Process Name (Next.js)</label>
                                         <input type="text" class="form-control form-control-sm font-monospace" name="pm2_name" id="pm2NameInput" placeholder="example.com">
                                     </div>
+                                    <div class="col-12 mt-2">
+                                        <label class="form-label small fw-bold">Custom Post-Deploy Command (Optional)</label>
+                                        <input type="text" class="form-control form-control-sm font-monospace" name="post_deploy_cmd" placeholder="e.g. php artisan migrate --force && php artisan config:cache">
+                                        <small class="text-muted" style="font-size: 0.72rem;">Runs in project root after build/composer step (e.g. Laravel migrations, seeders, cache warmup).</small>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -506,6 +511,13 @@
                             <strong>GitHub:</strong> Go to Repository Settings &rarr; <em>Deploy Keys</em> &rarr; <em>Add deploy key</em>.<br>
                             <strong>GitLab:</strong> Repository Settings &rarr; <em>Repository</em> &rarr; <em>Deploy Keys</em>.
                         </div>
+                    </div>
+
+                    <!-- Post-Deploy Command Box -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small"><i class="fas fa-terminal text-info me-1"></i> Custom Post-Deploy Command (Optional)</label>
+                        <input type="text" class="form-control font-monospace" name="post_deploy_cmd" id="editPostDeployCmd" placeholder="e.g. php artisan migrate --force && php artisan config:cache">
+                        <small class="text-muted d-block mt-1">Runs in the project root after Git pull and build/composer steps (perfect for Laravel migrations, cache warmup, etc.).</small>
                     </div>
 
                     <!-- Webhook Secret Box -->
@@ -660,6 +672,7 @@ function showWebhookModal(repoId) {
     document.getElementById('editRepoUrl').value = repo.repo_url || '';
     document.getElementById('editBranch').value = repo.branch || 'main';
     document.getElementById('editWebhookSecret').value = repo.webhook_secret || '';
+    document.getElementById('editPostDeployCmd').value = repo.post_deploy_cmd || '';
 
     const authType = repo.auth_type || 'public';
     if (authType === 'ssh') {

@@ -2063,6 +2063,7 @@ def cicd_route():
             initial_deploy = request.form.get('initial_deploy') == 'true'
             build_cmd = request.form.get('build_cmd', '').strip()
             pm2_name = request.form.get('pm2_name', '').strip() or name
+            post_deploy_cmd = request.form.get('post_deploy_cmd', '').strip()
 
             if not name or not target_dir or not repo_url:
                 flash("Project name, target directory, and repository URL are required.", "danger")
@@ -2098,6 +2099,7 @@ def cicd_route():
                 'auto_deploy': auto_deploy,
                 'build_cmd': build_cmd,
                 'pm2_name': pm2_name,
+                'post_deploy_cmd': post_deploy_cmd,
                 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'last_status': 'idle',
                 'last_deployed_at': None,
@@ -2157,6 +2159,7 @@ def cicd_route():
                     repo['public_key'] = pub_key
 
             repo['webhook_secret'] = webhook_secret
+            repo['post_deploy_cmd'] = request.form.get('post_deploy_cmd', '').strip()
             save_cicd_repo(repo)
             flash(f"Settings and credentials for '{repo.get('name')}' updated successfully!", "success")
             return redirect(url_for('cicd_route'))

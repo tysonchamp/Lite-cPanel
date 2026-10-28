@@ -133,6 +133,8 @@ It bundles a full automated LAMP/LEMP stack installer alongside a browser-based 
 - **Cryptographic Verification** — HMAC-SHA256 signature verification (`X-Hub-Signature-256`, `X-Gitlab-Token`) and branch filtering
 - **Live Build Logs** — Stream real-time deployment logs in a sleek dark terminal modal with 2s polling
 - **1-Click Manual Deploy** — Inline "Git Pull / Redeploy" buttons across Domains, Next.js, and Docker pages
+- **Post-Deploy Automation** — Execute custom commands (e.g. `composer install`, `php artisan migrate`, `php artisan optimize`) automatically after code pulls
+- 📖 **Comprehensive Guide** — See [GIT-CICD.md](GIT-CICD.md) for full setup guides, SSH deploy keys, webhooks, and framework examples (Next.js, Docker, Laravel).
 
 
 ### 🌐 Domain & SSL Manager
