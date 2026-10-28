@@ -2075,7 +2075,7 @@ def cicd_route():
                 repo_id = f"{repo_id}_{secrets.token_hex(3)}"
 
             webhook_token = secrets.token_urlsafe(24)
-            webhook_secret = secrets.token_hex(20)
+            webhook_secret = request.form.get('webhook_secret', '').strip() or secrets.token_hex(20)
 
             deploy_key_path = None
             public_key = None
@@ -2115,6 +2115,18 @@ def cicd_route():
             else:
                 flash(f"Failed to save repository: {msg}", "danger")
 
+            return redirect(url_for('cicd_route'))
+
+        elif action == 'update_secret':
+            repo_id = request.form.get('repo_id')
+            new_secret = request.form.get('webhook_secret', '').strip()
+            repo = get_cicd_repo(repo_id)
+            if not repo:
+                flash("Repository not found.", "danger")
+                return redirect(url_for('cicd_route'))
+            repo['webhook_secret'] = new_secret
+            save_cicd_repo(repo)
+            flash("Webhook secret updated successfully!", "success")
             return redirect(url_for('cicd_route'))
 
         elif action == 'deploy':

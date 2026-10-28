@@ -474,32 +474,41 @@ def verify_webhook_signature(repo, request):
     Validates GitHub or GitLab webhook signatures and headers.
     Returns (is_valid, reason).
     """
-    secret = repo.get('webhook_secret', '')
+    secret = (repo.get('webhook_secret') or '').strip()
     if not secret:
-        # If no secret configured, allow if token matches URL
+        # If no secret configured in Lite-cPanel, allow since the token in the URL is unique
         return True, "No secret required"
 
-    # 1. GitHub verification: X-Hub-Signature-256 header (sha256=hex)
-    gh_sig = request.headers.get('X-Hub-Signature-256')
-    if gh_sig:
-        if not gh_sig.startswith('sha256='):
-            return False, "Invalid GitHub signature format"
-        expected = hmac.new(secret.encode('utf-8'), request.get_data(), hashlib.sha256).hexdigest()
-        provided = gh_sig.split('sha256=')[1].strip()
+    raw_data = request.get_data()
+
+    # 1. GitHub verification: X-Hub-Signature-256 (SHA-256)
+    gh_sig256 = request.headers.get('X-Hub-Signature-256', '').strip()
+    if gh_sig256:
+        provided = gh_sig256.split('sha256=')[-1].strip().lower()
+        expected = hmac.new(secret.encode('utf-8'), raw_data, hashlib.sha256).hexdigest().lower()
         if hmac.compare_digest(expected, provided):
-            return True, "Valid GitHub signature"
+            return True, "Valid GitHub SHA-256 signature"
+        return False, "GitHub signature mismatch"
+
+    # 1b. Legacy GitHub verification: X-Hub-Signature (SHA-1)
+    gh_sig1 = request.headers.get('X-Hub-Signature', '').strip()
+    if gh_sig1:
+        provided = gh_sig1.split('sha1=')[-1].strip().lower()
+        expected = hmac.new(secret.encode('utf-8'), raw_data, hashlib.sha1).hexdigest().lower()
+        if hmac.compare_digest(expected, provided):
+            return True, "Valid GitHub SHA-1 signature"
         return False, "GitHub signature mismatch"
 
     # 2. GitLab verification: X-Gitlab-Token header
-    gl_token = request.headers.get('X-Gitlab-Token')
+    gl_token = request.headers.get('X-Gitlab-Token', '').strip()
     if gl_token:
-        if hmac.compare_digest(secret, gl_token.strip()):
+        if hmac.compare_digest(secret, gl_token):
             return True, "Valid GitLab token"
         return False, "GitLab token mismatch"
 
     # 3. Query string parameter fallback (?secret=...)
-    query_secret = request.args.get('secret')
-    if query_secret and hmac.compare_digest(secret, query_secret.strip()):
+    query_secret = request.args.get('secret', '').strip()
+    if query_secret and hmac.compare_digest(secret, query_secret):
         return True, "Valid query secret"
 
     # If secret is required but no matching header was provided

@@ -451,13 +451,23 @@
                 <!-- Webhook Secret Box -->
                 <div class="mb-4">
                     <label class="form-label fw-bold"><i class="fas fa-shield-alt text-warning me-1"></i> Webhook Secret</label>
-                    <div class="input-group">
-                        <input type="text" class="form-control font-monospace" id="modalWebhookSecret" readonly>
-                        <button class="btn btn-outline-secondary copy-btn" type="button" onclick="copyToClipboard('modalWebhookSecret')">
-                            <i class="fas fa-copy"></i> Copy
-                        </button>
-                    </div>
-                    <small class="text-muted">Enter this secret in the Webhook configuration for HMAC verification.</small>
+                    <form method="POST" action="{{ url_for('cicd_route') }}" class="mb-0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="update_secret">
+                        <input type="hidden" name="repo_id" id="modalSecretRepoId">
+                        <div class="input-group">
+                            <input type="text" class="form-control font-monospace" name="webhook_secret" id="modalWebhookSecret" placeholder="Optional secret...">
+                            <button class="btn btn-outline-secondary copy-btn" type="button" onclick="copyToClipboard('modalWebhookSecret')" title="Copy Secret">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                            <button class="btn btn-primary" type="submit" title="Save / Update Secret">
+                                <i class="fas fa-save"></i> Save
+                            </button>
+                        </div>
+                    </form>
+                    <small class="text-muted d-block mt-1">
+                        Must match the <strong>Secret</strong> field in GitHub exactly. If you changed the Secret in GitHub, paste it here and click Save. Or leave it blank in both GitHub and Lite-cPanel to disable secret verification.
+                    </small>
                 </div>
 
                 <!-- SSH Public Key Box (if SSH auth) -->
@@ -608,6 +618,7 @@ function showWebhookModal(repoId) {
     if (!repo) return;
 
     const fullWebhookUrl = `${BASE_WEBHOOK_URL}${repo.webhook_token}`;
+    document.getElementById('modalSecretRepoId').value = repoId;
     document.getElementById('modalWebhookUrl').value = fullWebhookUrl;
     document.getElementById('modalWebhookSecret').value = repo.webhook_secret || '';
 
