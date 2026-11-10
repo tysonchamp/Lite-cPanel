@@ -1215,14 +1215,23 @@ def databases():
             flash(message, 'success' if success else 'danger')
 
         elif action == 'change_password':
-            db_user = request.form.get('db_user')
-            host    = request.form.get('host')
+            db_user = (request.form.get('db_user') or '').strip()
+            host    = (request.form.get('host') or 'localhost').strip()
             new_pw  = request.form.get('new_password')
             # SECURITY: Regex validation
             v, e = validate_input(db_user, 'username')
             if not v:
                 flash(f"Validation failed: {e}", "danger")
                 return redirect(url_for('databases'))
+
+            if not host or not re.match(r'^[a-zA-Z0-9_\.\-:%]+$', host):
+                flash("Invalid host specification.", "danger")
+                return redirect(url_for('databases'))
+
+            if not new_pw:
+                flash("New password cannot be empty.", "danger")
+                return redirect(url_for('databases'))
+
             success, message = change_user_password(db_user, host, new_pw)
             flash(message, 'success' if success else 'danger')
 

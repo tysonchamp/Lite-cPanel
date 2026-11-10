@@ -132,14 +132,24 @@ def get_database_details():
         conn.close()
 
 def change_user_password(db_user, host, new_password):
+    if not db_user:
+        return False, "Database user is required."
+    if not new_password:
+        return False, "New password cannot be empty."
+
+    host = (host or 'localhost').strip()
     conn = get_mysql_connection()
-    if not conn: return False, "Could not connect to database server."
+    if not conn:
+        return False, "Could not connect to database server."
     try:
         with conn.cursor() as cursor:
             # Use %s parameterized query for the password — pymysql handles all escaping safely.
-            # Manually single-quote-escape user and host (identifiers, not values).
-            user_esc = db_user.replace("'", "''")
-            host_esc = host.replace("'", "''")
+            # Manually single-quote-escape user and host identifiers.
+            # CRITICAL: Escape '%' as '%%' in the SQL string template because PyMySQL uses
+            # % formatting for arguments, and an unescaped '%' in host (e.g. '%') causes
+            # ValueError: unsupported format character, which crashes Flask with a 500 error.
+            user_esc = db_user.replace("'", "''").replace("%", "%%")
+            host_esc = host.replace("'", "''").replace("%", "%%")
             cursor.execute(
                 f"ALTER USER '{user_esc}'@'{host_esc}' IDENTIFIED BY %s",
                 (new_password,)
@@ -148,9 +158,27 @@ def change_user_password(db_user, host, new_password):
         conn.commit()
         return True, f"Password updated for {db_user}@{host}."
     except pymysql.MySQLError as e:
+        # Fallback for MariaDB/MySQL configurations where ALTER USER might require SET PASSWORD
+        try:
+            with conn.cursor() as cursor:
+                user_esc = db_user.replace("'", "''").replace("%", "%%")
+                host_esc = host.replace("'", "''").replace("%", "%%")
+                cursor.execute(
+                    f"SET PASSWORD FOR '{user_esc}'@'{host_esc}' = PASSWORD(%s)",
+                    (new_password,)
+                )
+                cursor.execute("FLUSH PRIVILEGES")
+            conn.commit()
+            return True, f"Password updated for {db_user}@{host}."
+        except Exception:
+            return False, f"Error: {str(e)}"
+    except Exception as e:
         return False, f"Error: {str(e)}"
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 def update_user_host(db_name, db_user, old_host, new_host):
     """
@@ -342,17 +370,20 @@ def attach_user_to_db(db_name, db_user, host='localhost', password=None, permiss
             cursor.execute("SELECT User, Host FROM mysql.user WHERE User = %s AND Host = %s", (db_user, host))
             user_exists = cursor.fetchone() is not None
 
+            user_sql_esc = user_esc.replace("%", "%%")
+            host_sql_esc = host_esc.replace("%", "%%")
+
             if not user_exists:
                 if not password:
                     return False, f"Password is required to create new user '{db_user}'@'{host}'."
                 cursor.execute(
-                    f"CREATE USER '{user_esc}'@'{host_esc}' IDENTIFIED BY %s",
+                    f"CREATE USER '{user_sql_esc}'@'{host_sql_esc}' IDENTIFIED BY %s",
                     (password,)
                 )
             else:
                 if password:
                     cursor.execute(
-                        f"ALTER USER '{user_esc}'@'{host_esc}' IDENTIFIED BY %s",
+                        f"ALTER USER '{user_sql_esc}'@'{host_sql_esc}' IDENTIFIED BY %s",
                         (password,)
                     )
 
@@ -371,6 +402,8 @@ def attach_user_to_db(db_name, db_user, host='localhost', password=None, permiss
         return True, f"User '{db_user}'@'{host}' successfully attached to '{db_name}' with {perm_label} permissions."
     except pymysql.MySQLError as e:
         return False, f"Database error: {str(e)}"
+    except Exception as e:
+        return False, f"Error: {str(e)}"
     finally:
         if conn:
             conn.close()

@@ -460,16 +460,38 @@ def run_deployment_pipeline(repo_id, triggered_by='manual'):
             yml_path = os.path.join(target_dir, 'docker-compose.yml')
             yaml_path = os.path.join(target_dir, 'docker-compose.yaml')
             if os.path.exists(yml_path) or os.path.exists(yaml_path):
-                _append_log(log_file, f"Running 'docker compose up -d --build' in {target_dir}...")
-                res = subprocess.run(['docker', 'compose', 'up', '-d', '--build'], cwd=target_dir, capture_output=True, text=True, env=env)
+                docker_bin = shutil.which('docker')
+                if not docker_bin:
+                    _append_log(log_file, "❌ Error: Docker ('docker') was not found on this server.")
+                    _append_log(log_file, "💡 To deploy Docker applications, please install Docker on your server:")
+                    _append_log(log_file, "   curl -fsSL https://get.docker.com | sh")
+                    _append_log(log_file, "   or: apt-get update && apt-get install -y docker.io docker-compose-plugin")
+                    raise Exception("Docker is not installed on this server. Please install Docker and retry.")
+
+                # Determine compose command: 'docker compose' (v2 plugin) vs legacy 'docker-compose'
+                compose_cmd = None
+                test_v2 = subprocess.run([docker_bin, 'compose', 'version'], capture_output=True, text=True, env=env)
+                if test_v2.returncode == 0:
+                    compose_cmd = [docker_bin, 'compose']
+                elif shutil.which('docker-compose'):
+                    compose_cmd = [shutil.which('docker-compose')]
+
+                if not compose_cmd:
+                    _append_log(log_file, "❌ Error: Docker is installed, but Docker Compose was not found.")
+                    _append_log(log_file, "💡 Install docker-compose plugin: apt-get install -y docker-compose-plugin")
+                    raise Exception("Docker Compose not found on this server.")
+
+                build_run_cmd = compose_cmd + ['up', '-d', '--build']
+                _append_log(log_file, f"Running '{' '.join(build_run_cmd)}' in {target_dir}...")
+                res = subprocess.run(build_run_cmd, cwd=target_dir, capture_output=True, text=True, env=env)
                 _append_log(log_file, res.stdout)
                 if res.stderr:
                     _append_log(log_file, res.stderr)
                 if res.returncode != 0:
-                    raise Exception(f"Docker compose failed: {res.stderr.strip()}")
+                    raise Exception(f"Docker compose failed: {res.stderr.strip() or res.stdout.strip()}")
                 
                 # Cleanup dangling images
-                subprocess.run(['docker', 'image', 'prune', '-f'], capture_output=True, text=True, env=env)
+                subprocess.run([docker_bin, 'image', 'prune', '-f'], capture_output=True, text=True, env=env)
             else:
                 _append_log(log_file, "Notice: No docker-compose.yml found in document root.")
 
